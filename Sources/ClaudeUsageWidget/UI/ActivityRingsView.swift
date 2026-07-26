@@ -42,6 +42,30 @@ struct ActivityRingsView: View {
     return max(3, min(requested, fitted))
   }
 
+  /// Which ring band contains `point`, or `nil` for the hole in the middle or
+  /// the corners outside the outermost band.
+  ///
+  /// Index 0 is the outermost ring, matching draw order. The band is widened
+  /// by half the gap on each side — a 12pt ring is a small target, and a click
+  /// that lands in the gap almost certainly meant the ring beside it.
+  static func ringIndex(
+    at point: CGPoint, side: Double, count: Int, requested: Double, spacing: Double
+  ) -> Int? {
+    guard count > 0, side > 0 else { return nil }
+    let t = effectiveThickness(
+      side: side, count: count, requested: requested, spacing: spacing)
+    let center = side / 2
+    let distance = hypot(point.x - center, point.y - center)
+    let slop = spacing / 2
+
+    for index in 0..<count {
+      let outer = center - Double(index) * (t + spacing)
+      let inner = outer - t
+      if distance <= outer + slop && distance >= inner - slop { return index }
+    }
+    return nil
+  }
+
   var body: some View {
     GeometryReader { geo in
       let side = min(geo.size.width, geo.size.height)

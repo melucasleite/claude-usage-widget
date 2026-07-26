@@ -95,6 +95,29 @@ final class StatusItemController {
 
     menu.addItem(.separator())
 
+    // Same effect as clicking a ring on the widget, reachable without one.
+    let focus = NSMenuItem(title: "Centre Shows", action: nil, keyEquivalent: "")
+    let focusMenu = NSMenu()
+    let auto = NSMenuItem(
+      title: "Automatic (most urgent)", action: #selector(pinAutomatic), keyEquivalent: "")
+    auto.target = self
+    auto.state = configStore.config.pinnedMetric == nil ? .on : .off
+    focusMenu.addItem(auto)
+    focusMenu.addItem(.separator())
+    for metric in configStore.config.visibleMetrics {
+      let item = NSMenuItem(
+        title: metric.title, action: #selector(pinMetric(_:)), keyEquivalent: "")
+      item.target = self
+      item.image = swatch(metric.color)
+      item.representedObject = metric.rawValue
+      item.state = configStore.config.pinnedMetric == metric ? .on : .off
+      focusMenu.addItem(item)
+    }
+    focus.submenu = focusMenu
+    menu.addItem(focus)
+
+    menu.addItem(.separator())
+
     let toggle = NSMenuItem(
       title: "Always on Top", action: #selector(toggleAlwaysOnTop), keyEquivalent: "")
     toggle.target = self
@@ -143,6 +166,17 @@ final class StatusItemController {
   }
 
   // MARK: - Actions
+
+  @objc private func pinAutomatic() {
+    configStore.config.pinnedMetric = nil
+  }
+
+  @objc private func pinMetric(_ sender: NSMenuItem) {
+    guard let raw = sender.representedObject as? String,
+      let metric = RingMetric(rawValue: raw)
+    else { return }
+    configStore.config.pinnedMetric = configStore.config.pinnedMetric == metric ? nil : metric
+  }
 
   @objc private func toggleAlwaysOnTop() {
     configStore.config.alwaysOnTop.toggle()

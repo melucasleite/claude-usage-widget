@@ -43,10 +43,21 @@ it to Login Items if you want it always around.
 
 ## Usage
 
+- **Hover a ring** to preview it: the centre readout switches to that ring's
+  percentage, label and colour, and reverts when you leave. The tooltip adds
+  the reset countdown and where the number came from.
+- **Click a ring** to pin it there. Click it again to unpin. The choice
+  persists across relaunches. Unpinned, the centre follows whichever ring is
+  closest to its limit.
 - **Drag** the widget anywhere. Its position is remembered.
-- **Hover** for a refresh button and a settings shortcut.
-- **Right-click** the widget, or click the menu bar readout, for the full menu.
+- **Hover** the widget for a refresh button and a settings shortcut.
+- **Right-click** the widget, or click the menu bar readout, for the full menu
+  — including *Centre Shows*, which pins a ring without clicking one.
 - **Always on top** is a toggle — in the menu, or in Settings → Appearance.
+
+Reset countdowns live in the tooltip rather than on the face. The widget is
+something you glance at, and a number that only matters once you are already
+worried has not earned permanent space in the middle.
 
 ### Diagnostics
 

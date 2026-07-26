@@ -2,11 +2,26 @@ import SwiftUI
 
 /// The contents of the floating widget: the ring stack, an optional centre
 /// readout, and an optional legend.
+///
+/// ## Which ring the centre shows
+///
+/// Three inputs, in descending priority:
+///
+/// 1. **Hover** — pointing at a ring previews it immediately, and reverts the
+///    moment you leave. Nothing is committed.
+/// 2. **Pinned** — clicking a ring pins it; clicking it again unpins. Survives
+///    relaunch.
+/// 3. **Most urgent** — the default, whichever ring is closest to its limit.
+///
+/// Reset countdowns deliberately live in the tooltip rather than on the face:
+/// the widget is glanced at, and a number that only matters when you are
+/// already worried does not earn permanent space.
 struct WidgetView: View {
   @ObservedObject var coordinator: UsageCoordinator
   @ObservedObject var configStore: ConfigStore
 
   @State private var hovering = false
+  @State private var hoveredMetric: RingMetric?
 
   private var config: Config { configStore.config }
   private var rings: [RingDatum] { coordinator.snapshot.ordered(by: config.visibleMetrics) }
@@ -24,6 +39,23 @@ struct WidgetView: View {
     return max(28, side - consumed)
   }
 
+  /// The ring the centre readout is currently showing.
+  private var focused: RingDatum? {
+    if let hoveredMetric { return datum(for: hoveredMetric) }
+    if let pinned = config.pinnedMetric, config.visibleMetrics.contains(pinned) {
+      return datum(for: pinned)
+    }
+    return coordinator.snapshot.mostUrgent(among: config.visibleMetrics)
+  }
+
+  private var isPinned: Bool {
+    hoveredMetric == nil && config.pinnedMetric != nil
+  }
+
+  private func datum(for metric: RingMetric) -> RingDatum {
+    coordinator.snapshot.rings[metric] ?? .unavailable(metric)
+  }
+
   var body: some View {
     VStack(spacing: 10) {
       ZStack {
@@ -35,6 +67,21 @@ struct WidgetView: View {
         if config.showCenterReadout { centerReadout }
       }
       .frame(width: config.widgetSize, height: config.widgetSize)
+      .contentShape(Rectangle())
+      .onContinuousHover { phase in
+        switch phase {
+        case .active(let point):
+          hoveredMetric = metric(at: point)
+        case .ended:
+          hoveredMetric = nil
+        }
+      }
+      // A tap needs no coordinates of its own — whatever is hovered is what
+      // was clicked. Clicking the pinned ring again releases it.
+      .onTapGesture {
+        guard let target = hoveredMetric else { return }
+        configStore.config.pinnedMetric = (config.pinnedMetric == target) ? nil : target
+      }
 
       if config.showLegend { legend }
     }
@@ -44,6 +91,19 @@ struct WidgetView: View {
     .opacity(config.opacity)
     .onHover { hovering = $0 }
     .help(tooltip)
+  }
+
+  /// Maps a point in the ring stack to the metric drawn there.
+  private func metric(at point: CGPoint) -> RingMetric? {
+    guard
+      let index = ActivityRingsView.ringIndex(
+        at: point,
+        side: config.widgetSize,
+        count: rings.count,
+        requested: config.ringThickness,
+        spacing: config.ringSpacing)
+    else { return nil }
+    return rings.indices.contains(index) ? rings[index].metric : nil
   }
 
   // MARK: Pieces
@@ -63,20 +123,25 @@ struct WidgetView: View {
 
   @ViewBuilder
   private var centerReadout: some View {
-    if let urgent = coordinator.snapshot.mostUrgent(among: config.visibleMetrics) {
+    if let focused {
       VStack(spacing: 1) {
-        Text(urgent.percentText)
+        Text(focused.percentText)
           .font(.system(size: config.widgetSize * 0.17, weight: .semibold, design: .rounded))
-          .foregroundStyle(urgent.metric.color)
+          .foregroundStyle(focused.metric.color)
           .contentTransition(.numericText())
-        Text(urgent.metric.title.uppercased())
-          .font(.system(size: config.widgetSize * 0.055, weight: .bold, design: .rounded))
-          .tracking(0.8)
-          .foregroundStyle(.secondary)
-        if let reset = urgent.resetText() {
-          Text(reset)
-            .font(.system(size: config.widgetSize * 0.05, design: .rounded))
-            .foregroundStyle(.tertiary)
+
+        HStack(spacing: 3) {
+          // A small dot marks a deliberate choice, so a pinned ring is not
+          // mistaken for the automatic one.
+          if isPinned {
+            Circle()
+              .fill(focused.metric.color)
+              .frame(width: config.widgetSize * 0.022, height: config.widgetSize * 0.022)
+          }
+          Text(focused.metric.title.uppercased())
+            .font(.system(size: config.widgetSize * 0.055, weight: .bold, design: .rounded))
+            .tracking(0.8)
+            .foregroundStyle(.secondary)
         }
       }
       .lineLimit(1)
@@ -84,6 +149,9 @@ struct WidgetView: View {
       // Keep the readout inside the innermost ring rather than letting a
       // wide number spill over the bands.
       .frame(maxWidth: innerDiameter * 0.82)
+      .animation(.easeOut(duration: 0.18), value: focused.metric)
+      // Let clicks and hovers reach the rings underneath.
+      .allowsHitTesting(false)
     }
   }
 
@@ -99,6 +167,12 @@ struct WidgetView: View {
             .font(.system(size: 10, weight: .semibold, design: .rounded))
             .monospacedDigit()
             .foregroundStyle(ring.provenance == .estimated ? .secondary : .primary)
+        }
+        .contentShape(Rectangle())
+        .onHover { hoveredMetric = $0 ? ring.metric : nil }
+        .onTapGesture {
+          configStore.config.pinnedMetric =
+            (config.pinnedMetric == ring.metric) ? nil : ring.metric
         }
       }
     }
@@ -131,15 +205,26 @@ struct WidgetView: View {
     .padding(6)
   }
 
+  /// Hovering a ring narrows the tooltip to that ring, with its reset time.
+  /// Otherwise it lists everything.
   private var tooltip: String {
-    var lines: [String] = []
-    for ring in rings {
+    func describe(_ ring: RingDatum) -> String {
       var line = "\(ring.metric.title): \(ring.percentText)"
-      if let detail = ring.detail { line += "  (\(detail))" }
       if let reset = ring.resetText() { line += " · resets in \(reset)" }
+      if let detail = ring.detail { line += "\n\(detail)" }
       if ring.provenance == .estimated { line += " · estimated" }
-      lines.append(line)
+      return line
     }
+
+    if let hoveredMetric {
+      var text = describe(datum(for: hoveredMetric))
+      text +=
+        config.pinnedMetric == hoveredMetric
+        ? "\n\nClick to unpin" : "\n\nClick to pin to centre"
+      return text
+    }
+
+    var lines = rings.map(describe)
     if let message = coordinator.snapshot.liveSourceStatus.message {
       lines.append("Live source: \(message)")
     }

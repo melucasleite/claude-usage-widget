@@ -46,6 +46,13 @@ struct Config: Codable, Equatable {
   /// Metrics that are drawn. Anything absent is skipped entirely.
   var enabledMetrics: Set<RingMetric> = Set(RingMetric.allCases)
 
+  /// Ring the centre readout is pinned to, set by clicking that ring.
+  ///
+  /// `nil` means "follow whatever is closest to its limit", which is the
+  /// default and what you usually want at a glance. Persisted, so a deliberate
+  /// choice survives a relaunch.
+  var pinnedMetric: RingMetric?
+
   /// Ring stroke thickness in points.
   var ringThickness: Double = 15
 

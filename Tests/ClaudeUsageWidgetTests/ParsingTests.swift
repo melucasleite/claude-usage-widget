@@ -195,3 +195,73 @@ final class ConfigTests: XCTestCase {
     XCTAssertEqual(decoded, config)
   }
 }
+
+final class RingHitTestingTests: XCTestCase {
+
+  private let side: Double = 200
+  private let spacing: Double = 5
+  private let requested: Double = 15
+
+  private func index(at point: CGPoint, count: Int = 3) -> Int? {
+    ActivityRingsView.ringIndex(
+      at: point, side: side, count: count, requested: requested, spacing: spacing)
+  }
+
+  func testTopEdgeHitsOutermostRing() {
+    // Straight up from the centre, just inside the outer edge.
+    XCTAssertEqual(index(at: CGPoint(x: 100, y: 2)), 0)
+  }
+
+  func testCentreHitsNothing() {
+    XCTAssertNil(index(at: CGPoint(x: 100, y: 100)))
+  }
+
+  func testCornerHitsNothing() {
+    XCTAssertNil(index(at: CGPoint(x: 0, y: 0)))
+  }
+
+  /// Walking inward from the edge must cross the rings in draw order and never
+  /// skip one — the failure mode that silently selects the wrong ring.
+  func testBandsAreOrderedInwardWithoutGaps() {
+    let count = 3
+    let t = ActivityRingsView.effectiveThickness(
+      side: side, count: count, requested: requested, spacing: spacing)
+
+    for ring in 0..<count {
+      let outer = side / 2 - Double(ring) * (t + spacing)
+      let inner = outer - t
+      let midRadius = (outer + inner) / 2
+      // Sample the middle of the band, directly above centre.
+      let point = CGPoint(x: side / 2, y: side / 2 - midRadius)
+      XCTAssertEqual(index(at: point, count: count), ring, "band \(ring) mis-mapped")
+    }
+  }
+
+  /// Every ring must stay reachable when four rings are squeezed into the same
+  /// diameter and the adaptive thickness kicks in.
+  func testAllRingsReachableWhenThinned() {
+    let count = 4
+    let t = ActivityRingsView.effectiveThickness(
+      side: side, count: count, requested: requested, spacing: spacing)
+    XCTAssertLessThan(t, requested, "four rings should have been thinned")
+
+    var seen = Set<Int>()
+    // Sweep inward one point at a time along the vertical axis.
+    for offset in stride(from: 0.0, to: side / 2, by: 1.0) {
+      if let hit = index(at: CGPoint(x: side / 2, y: offset), count: count) {
+        seen.insert(hit)
+      }
+    }
+    XCTAssertEqual(seen, Set(0..<count))
+  }
+
+  func testHoleIsPreservedForReadout() {
+    let count = 4
+    let t = ActivityRingsView.effectiveThickness(
+      side: side, count: count, requested: requested, spacing: spacing)
+    let innermostInner = side / 2 - Double(count - 1) * (t + spacing) - t
+    XCTAssertGreaterThan(
+      innermostInner * 2, side * ActivityRingsView.minimumHoleFraction * 0.95,
+      "centre hole collapsed")
+  }
+}
