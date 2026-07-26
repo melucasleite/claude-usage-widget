@@ -1,0 +1,30 @@
+# ---------------------------------------------------------------------------
+# Credentials — never, ever commit these.
+# The app reads the Claude OAuth token from the macOS Keychain (or from
+# ~/.claude/.credentials.json) at runtime. Nothing secret should ever live in
+# this repository, but these patterns are here as a hard backstop.
+# ---------------------------------------------------------------------------
+.credentials.json
+*credentials*.json
+*.pem
+*.key
+*.p12
+*.mobileprovision
+.env
+.env.*
+!.env.example
+secrets/
+**/ANTHROPIC_API_KEY*
+
+# Build artifacts
+.build/
+.swiftpm/
+DerivedData/
+dist/
+*.app
+*.dSYM
+*.o
+*.swiftmodule
+
+# macOS
+.DS_Store
