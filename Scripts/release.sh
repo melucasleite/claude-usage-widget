@@ -286,9 +286,19 @@ if gh release view "$TAG" >/dev/null 2>&1; then
 else
   ARGS=(--title "$APP_NAME $VERSION" --notes-file -)
   [[ "$DRAFT" == "1" ]] && ARGS+=(--draft)
-  gh release create "$TAG" "$DMG" "${DMG}.sha256" "$ZIP" "${ZIP}.sha256" "${ARGS[@]}" <<EOF
+  # Notes are built in a *quoted* heredoc.
+  #
+  # An unquoted one runs command substitution on its contents, so markdown
+  # backticks are executed as shell commands and silently deleted: `.dmg` in
+  # the install line published as "download the , open it", with a
+  # ".dmg: command not found" in the log that nobody read.
+  #
+  # Checksums are appended afterwards rather than interpolated, so nothing in
+  # this text is ever evaluated.
+  NOTES="$(mktemp)"
+  cat > "$NOTES" <<'NOTES_EOF'
 <p align="center">
-  <img src="https://raw.githubusercontent.com/melucasleite/claude-usage-widget/main/docs/icon.png" width="128" alt="${APP_NAME}">
+  <img src="https://raw.githubusercontent.com/melucasleite/claude-usage-widget/main/docs/icon.png" width="128" alt="Claude Usage Widget">
 </p>
 
 Your Claude Code usage as Apple-Watch-style activity rings — 5-hour window,
@@ -296,14 +306,26 @@ weekly, and Fable.
 
 **Install:** download the `.dmg`, open it, drag the app to Applications.
 
-Requires macOS 14+ and Claude Code signed in on your own machine: the widget
-reads *your* credentials and *your* transcripts.
+**Requires** macOS 14+ and Claude Code signed in on this Mac. The widget reads
+the credential Claude Code already stores — only ever read, never copied. A
+`claude setup-token` token will not work here: the usage endpoint requires the
+`user:profile` scope, which only the interactive sign-in grants.
 
-\`\`\`
-$(shasum -a 256 "$DMG" | awk '{print $1}')  $(basename "$DMG")
-$(shasum -a 256 "$ZIP" | awk '{print $1}')  $(basename "$ZIP")
-\`\`\`
-EOF
+```
+NOTES_EOF
+
+  # Bare filenames, not paths: a checksum file is useless if `shasum -c` cannot
+  # resolve the name from wherever the user downloaded it.
+  for artifact in "$DMG" "$ZIP"; do
+    printf '%s  %s\n' "$(shasum -a 256 "$artifact" | awk '{print $1}')" \
+      "$(basename "$artifact")" >> "$NOTES"
+  done
+  printf '```\n' >> "$NOTES"
+
+  ARGS=(--title "$APP_NAME $VERSION" --notes-file "$NOTES")
+  [[ "$DRAFT" == "1" ]] && ARGS+=(--draft)
+  gh release create "$TAG" "$DMG" "${DMG}.sha256" "$ZIP" "${ZIP}.sha256" "${ARGS[@]}"
+  rm -f "$NOTES"
 fi
 
 step "Released"
