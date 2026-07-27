@@ -58,10 +58,15 @@ struct Config: Codable, Equatable {
 
   /// Seconds between refreshes.
   ///
-  /// The usage endpoint is rate limited more tightly than it looks — a busy
-  /// afternoon of polling plus a few manual refreshes can earn an hour-long
-  /// `Retry-After`. Three minutes is ample for windows that move slowly.
-  var refreshInterval: Double = 180
+  /// The usage endpoint is rate limited far more tightly than it looks — an
+  /// afternoon of polling plus a few manual refreshes earns an hour-long
+  /// `Retry-After`. Five minutes is ample: a 5-hour window cannot move by a
+  /// whole percentage point faster than every three minutes, and the weekly
+  /// ones are slower still.
+  ///
+  /// A reading younger than this is served from cache rather than re-fetched,
+  /// which is also what makes relaunching the app free.
+  var refreshInterval: Double = 300
 
   /// Exact API field for the Fable ring, e.g. `seven_day_omelette`.
   ///

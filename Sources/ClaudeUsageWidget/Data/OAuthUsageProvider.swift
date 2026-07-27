@@ -133,6 +133,11 @@ struct UsageWindows: Equatable, Sendable {
   /// Every key the response contained, including ones that were null.
   private(set) var seenKeys: Set<String> = []
 
+  /// The response verbatim, so a reading can be cached to disk and restored
+  /// without another request. Re-decoding the original bytes also means the
+  /// cache cannot drift from the parser.
+  private(set) var raw: Data = Data()
+
   /// Keys that were present but explicitly `null`.
   ///
   /// This distinction matters. A model window that is present-but-null means
@@ -163,6 +168,7 @@ struct UsageWindows: Equatable, Sendable {
     guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
       throw OAuthUsageProvider.ProviderError.decoding
     }
+    self.raw = data
     for (key, value) in root {
       seenKeys.insert(key)
       if value is NSNull {

@@ -26,6 +26,15 @@ final class UsageCoordinator: ObservableObject {
     var backoffUntil: Date?
     var lastLiveFetch: Date?
     var lastFailureReason: String?
+    /// The last successful response, verbatim.
+    ///
+    /// Without this, every launch had to fetch before it could show anything —
+    /// so quitting and reopening cost a request each time, and a rebuild loop
+    /// during development could burn an hour-long rate limit on its own. The
+    /// rings now come back instantly from cache, and the network is touched
+    /// only when that cache is actually stale.
+    var lastBody: Data?
+    var lastBodyAt: Date?
   }
 
   private var liveBackoffUntil: Date?
@@ -33,6 +42,7 @@ final class UsageCoordinator: ObservableObject {
   private var lastFailureReason: String?
   private var consecutiveFailures = 0
   private var cachedWindows: UsageWindows?
+  private var cachedAt: Date?
   /// Diagnostics for the status line: whether we tried to self-heal, and how
   /// that went.
   private(set) var didAttemptRefresh = false
@@ -48,6 +58,12 @@ final class UsageCoordinator: ObservableObject {
   init(config: Config) {
     self.config = config
     loadRateLimitState()
+  }
+
+  /// Whether the cached reading is recent enough to skip a request.
+  private func cacheIsFresh(now: Date) -> Bool {
+    guard cachedWindows != nil, let at = cachedAt else { return false }
+    return now.timeIntervalSince(at) < config.refreshInterval
   }
 
   // MARK: - Lifecycle
@@ -77,6 +93,12 @@ final class UsageCoordinator: ObservableObject {
     timer.tolerance = 10
     RunLoop.main.add(timer, forMode: .common)
     self.timer = timer
+    // Paint the cached reading first so the rings are never blank while a
+    // request is in flight — or while one is deliberately not being made.
+    if let cached = cachedWindows {
+      snapshot = UsageSnapshot(
+        rings: buildRings(from: cached), lastUpdated: cachedAt, status: .ok)
+    }
     Task { await refresh() }
   }
 
@@ -122,13 +144,18 @@ final class UsageCoordinator: ObservableObject {
     }
 
     let serverWaitIsLong = liveBackoffUntil.map { $0.timeIntervalSince(now) > 120 } ?? false
+    // A cached reading younger than the refresh interval is what the next poll
+    // would have produced anyway, so serve it rather than spend a request.
+    // This is what makes relaunching free.
     let mayFetch =
-      (force && !serverWaitIsLong) || (!isBackingOff(now: now) && !isThrottled(now: now))
+      (force && !serverWaitIsLong)
+      || (!isBackingOff(now: now) && !isThrottled(now: now) && !cacheIsFresh(now: now))
 
     if mayFetch {
       do {
         let windows = try await fetchWithAutoRefresh()
         cachedWindows = windows
+        cachedAt = now
         lastLiveFetch = now
         liveBackoffUntil = nil
         consecutiveFailures = 0
@@ -145,9 +172,14 @@ final class UsageCoordinator: ObservableObject {
         next.rings = cachedWindows.map(buildRings) ?? [:]
         next.status = .failed(statusText(now: now))
       }
+    } else if cacheIsFresh(now: now), let cached = cachedWindows {
+      // Not stale yet: this is simply the reading we already have.
+      next.rings = buildRings(from: cached)
+      next.lastUpdated = cachedAt
+      next.status = .ok
     } else {
-      // Waiting. Keep showing the last real numbers — minutes old at worst,
-      // which beats blanking the rings.
+      // Waiting on a backoff. Keep showing the last real numbers — minutes old
+      // at worst, which beats blanking the rings.
       next.rings = cachedWindows.map(buildRings) ?? [:]
       next.status = .failed(statusText(now: now))
     }
@@ -269,13 +301,19 @@ final class UsageCoordinator: ObservableObject {
     if let until = state.backoffUntil, until > Date() { liveBackoffUntil = until }
     lastLiveFetch = state.lastLiveFetch
     lastFailureReason = state.lastFailureReason
+    if let body = state.lastBody, let windows = try? UsageWindows(data: body) {
+      cachedWindows = windows
+      cachedAt = state.lastBodyAt
+    }
   }
 
   private func saveRateLimitState() {
     let state = RateLimitState(
       backoffUntil: liveBackoffUntil,
       lastLiveFetch: lastLiveFetch,
-      lastFailureReason: lastFailureReason)
+      lastFailureReason: lastFailureReason,
+      lastBody: cachedWindows?.raw,
+      lastBodyAt: cachedAt)
     guard let data = try? JSONEncoder().encode(state) else { return }
     try? data.write(to: Self.rateLimitStateURL, options: .atomic)
   }
