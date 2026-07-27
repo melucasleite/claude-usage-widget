@@ -353,6 +353,32 @@ round trip on your friend's machine.
 Hardened runtime is enabled in `project.yml` (notarization rejects builds
 without it) and the sandbox is explicitly off, for the reasons above.
 
+### Cutting a release
+
+```bash
+./Scripts/release.sh 1.0.0
+```
+
+Signs with the Developer ID certificate, notarizes, staples, verifies, zips
+with a checksum, and creates the GitHub Release. Useful flags: `--no-publish`
+to package only, `--draft`, and `--app PATH` to reuse a bundle you already
+built (a bundle that already carries a stapled ticket is not re-submitted).
+
+Notarization credentials are stored once — this needs an app-specific password
+from appleid.apple.com, so it is yours to run:
+
+```bash
+xcrun notarytool store-credentials "ClaudeUsageWidget" --apple-id you@example.com --team-id YOURTEAMID
+```
+
+The script fails early rather than late. It refuses to submit anything missing
+the hardened runtime or a secure timestamp — both guaranteed rejections that
+would otherwise surface fifteen minutes into Apple's queue — and after
+stapling it re-runs the Gatekeeper check on a **copy tagged with a download
+quarantine flag**. That last part matters: an app assessed on the machine that
+built it can pass while still being refused as a download, which is the only
+context that counts.
+
 ### Or just have them build it
 
 The repository is public and `./Scripts/build-app.sh` works from a clean clone.
