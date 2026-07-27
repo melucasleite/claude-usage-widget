@@ -477,6 +477,23 @@ open "/Applications/Xcode.app/Contents/Applications/Icon Composer.app"
 That exports a `.icon` rather than a `.icns`, and is a design exercise rather
 than a packaging step. A plain `.icns` works fine everywhere.
 
+### Release notes
+
+Notes are written as the work happens, in `ReleaseNotes/Unreleased.md` — one
+line per user-visible change, under `Added` / `Changed` / `Fixed`. Reconstructing
+them at release time is when the detail goes, and it shows.
+
+`ReleaseNotes/CLAUDE.md` is the instruction sheet, so an agent working in this
+repo keeps the file current without being asked. Its main rule is brevity: one
+sentence, written for whoever is deciding whether to download the build, not
+for whoever wrote the code. If a change is not user-visible it gets no note at
+all — an empty section beats filler.
+
+`release.sh` archives those notes to `ReleaseNotes/v<version>.md`, publishes
+them in the GitHub release body, and resets the scratch file. It **refuses to
+release** when the file is empty: shipping a build nobody can describe is worse
+than not shipping it.
+
 ### Cutting a release
 
 ```bash

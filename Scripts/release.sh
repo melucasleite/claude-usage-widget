@@ -101,11 +101,34 @@ if [[ -z "$APP_OVERRIDE" ]]; then
   sed -i '' "s/^    CURRENT_PROJECT_VERSION: .*/    CURRENT_PROJECT_VERSION: \"$NEXT_BUILD\"/" project.yml
   echo "    marketing $VERSION · build $NEXT_BUILD"
 
+  # Archive the accumulated notes under this version and reset the scratch
+  # file. Doing it here — before the build — means the commit that stamps the
+  # version also records what is in it.
+  NOTES_SRC="ReleaseNotes/Unreleased.md"
+  NOTES_ARCHIVE="ReleaseNotes/v${VERSION}.md"
+  if [[ -f "$NOTES_SRC" ]]; then
+    # Strip comments and blank-only content to see whether anything was written.
+    NOTES_BODY="$(grep -vE '^\s*<!--|^\s*$' "$NOTES_SRC" | grep -vE '^###\s*$' || true)"
+    if [[ -z "$(grep -E '^\s*-\s+\S' <<<"$NOTES_BODY" || true)" ]]; then
+      fail "ReleaseNotes/Unreleased.md has no entries.
+
+  Add one line per user-visible change before cutting a release — see
+  ReleaseNotes/CLAUDE.md. Publishing a build nobody can describe is worse
+  than not publishing it."
+    fi
+    # Drop the leading comment line; keep the headings and bullets.
+    grep -vE '^\s*<!--' "$NOTES_SRC" | sed '/./,$!d' > "$NOTES_ARCHIVE"
+    cat > "$NOTES_SRC" <<'UNRELEASED_EOF'
+<!-- One line per user-visible change. See CLAUDE.md in this folder. -->
+UNRELEASED_EOF
+    echo "    notes archived to $NOTES_ARCHIVE"
+  fi
+
   if [[ "$COMMIT_BUMP" == "1" ]] && git diff --quiet --exit-code -- project.yml Resources/Info.plist; then
     echo "    (already at this version, nothing to commit)"
   elif [[ "$COMMIT_BUMP" == "1" ]]; then
-    git add project.yml Resources/Info.plist
-    git commit -q -m "Release $VERSION" -- project.yml Resources/Info.plist \
+    git add project.yml Resources/Info.plist ReleaseNotes 2>/dev/null || true
+    git commit -q -m "Release $VERSION" -- project.yml Resources/Info.plist ReleaseNotes \
       && echo "    committed the bump" \
       || echo "    (could not commit; continuing)"
   fi
@@ -295,6 +318,16 @@ else
 
 Your Claude Code usage as Apple-Watch-style activity rings — 5-hour window,
 weekly, and Fable.
+NOTES_EOF
+
+  # What changed, straight from ReleaseNotes/. Written as the work happened
+  # rather than reconstructed afterwards, which is when the detail goes.
+  if [[ -f "ReleaseNotes/v${VERSION}.md" ]]; then
+    printf '\n' >> "$NOTES"
+    cat "ReleaseNotes/v${VERSION}.md" >> "$NOTES"
+  fi
+
+  cat >> "$NOTES" <<'NOTES_EOF'
 
 **Install:** download the `.dmg`, open it, drag the app to Applications.
 
