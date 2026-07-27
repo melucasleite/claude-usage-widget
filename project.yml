@@ -1,0 +1,73 @@
+# XcodeGen spec — generates ClaudeUsageWidget.xcodeproj.
+#
+# Why this exists alongside Package.swift:
+#
+# Day-to-day builds and tests run through SwiftPM (`swift build`, `swift test`,
+# `./Scripts/build-app.sh`) and need no Xcode project at all. But a Swift
+# *package* opened in Xcode has no Signing & Capabilities tab and no
+# `Product ▸ Archive`, so the Organizer flow that notarizes and exports a
+# Developer ID build is unavailable. That flow needs a real macOS App target,
+# which is what this generates.
+#
+# The project itself is deliberately NOT committed — this file is the source of
+# truth, so it can never drift from the sources or rot into an unreviewable
+# binary diff. Regenerate any time with:
+#
+#     xcodegen generate
+#
+# Note the app target has no unit tests attached. Its `main.swift` calls
+# NSApplication.run(), which would hang a test host, and hosting tests in a
+# GUI app buys nothing here. Tests live in SwiftPM: `swift test`.
+
+name: ClaudeUsageWidget
+
+options:
+  bundleIdPrefix: us.lucasleite
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Required for notarization. Without it, notarytool rejects the upload.
+    ENABLE_HARDENED_RUNTIME: YES
+    # This app must NOT be sandboxed: it reads Claude Code's Keychain item and
+    # the transcripts in ~/.claude/projects, both of which a sandbox forbids.
+    # That is also why it cannot ship on the Mac App Store.
+    ENABLE_APP_SANDBOX: NO
+    DEAD_CODE_STRIPPING: YES
+
+targets:
+  ClaudeUsageWidget:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/ClaudeUsageWidget
+    # Generated, NOT the static Resources/Info.plist. Xcode wants build-setting
+    # variables here ($(EXECUTABLE_NAME) and friends); Scripts/build-app.sh
+    # copies its plist verbatim and needs literal values. Sharing one file
+    # means whichever tool ran last breaks the other.
+    info:
+      path: Resources/Generated-Info.plist
+      properties:
+        CFBundleName: Claude Usage Widget
+        CFBundleDisplayName: Claude Usage Widget
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        # Menu-bar / floating utility: no Dock icon.
+        LSUIElement: true
+        NSHighResolutionCapable: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: us.lucasleite.ClaudeUsageWidget
+        PRODUCT_NAME: ClaudeUsageWidget
+        # Automatic signing picks up your Developer ID once the team is set in
+        # Xcode ▸ Signing & Capabilities. Leave DEVELOPMENT_TEAM unset here so
+        # the project does not hardcode one person's team.
+        CODE_SIGN_STYLE: Automatic
+        COMBINE_HIDPI_IMAGES: YES

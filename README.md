@@ -261,6 +261,76 @@ directory:
 { "claude-opus-5": { "input": 15, "output": 75, "cacheWrite": 18.75, "cacheRead": 1.5 } }
 ```
 
+## Distribution
+
+The Mac App Store is not an option for this app, and the reason is structural
+rather than bureaucratic: **MAS requires sandboxing**, and a sandboxed app
+cannot read Claude Code's Keychain item, cannot read `~/.claude/projects`
+outside its container, and cannot invoke `/usr/bin/security`. That is every one
+of this app's data paths.
+
+The route for Mac utilities is **Developer ID + notarization** — no store, no
+review.
+
+### Generating the Xcode project
+
+Everyday work needs no Xcode project (`swift build`, `swift test`,
+`./Scripts/build-app.sh`). But a Swift *package* opened in Xcode has no
+Signing & Capabilities tab and no `Product ▸ Archive`, so the Organizer flow
+that notarizes a Developer ID build is unavailable. For that you need a real
+App target:
+
+```bash
+brew install xcodegen && xcodegen generate && open ClaudeUsageWidget.xcodeproj
+```
+
+`project.yml` is the source of truth; the `.xcodeproj` is generated and
+git-ignored, so it cannot drift from the sources or rot into an unreviewable
+binary diff. Regenerate it whenever you add a file.
+
+### Signing certificates: the iOS gotcha
+
+An **Apple Development** certificate is not enough. Those are for local and
+registered devices — an app signed with one is *blocked* on someone else's Mac.
+Distribution needs a **Developer ID Application** certificate, created in
+Xcode ▸ Settings ▸ Accounts ▸ Manage Certificates ▸ **+**, which requires the
+paid Apple Developer Program.
+
+`Scripts/build-app.sh` deliberately prefers whatever certificate it finds for
+*local* builds — that is only about keeping Keychain grants stable across
+rebuilds, and is unrelated to distribution.
+
+### Archiving and notarizing
+
+In Xcode: select the target ▸ **Signing & Capabilities** ▸ set your Team, then
+`Product ▸ Archive` ▸ **Distribute App** ▸ **Direct Distribution**. Xcode
+notarizes and staples for you.
+
+The equivalent from the command line:
+
+```bash
+xcrun notarytool submit ClaudeUsageWidget.zip --keychain-profile AC_PASSWORD --wait
+```
+
+```bash
+xcrun stapler staple dist/ClaudeUsageWidget.app
+```
+
+Stapling matters — it embeds the ticket so the app validates without a network
+round trip on your friend's machine.
+
+Hardened runtime is enabled in `project.yml` (notarization rejects builds
+without it) and the sandbox is explicitly off, for the reasons above.
+
+### Or just have them build it
+
+The repository is public and `./Scripts/build-app.sh` works from a clean clone.
+For a technical friend that is zero cost and no Apple paperwork.
+
+Either way, the widget is only useful to someone who has Claude Code signed in
+on their own machine — it reads *their* credentials and *their* transcripts,
+never yours.
+
 ## Tests
 
 ```bash
