@@ -5,9 +5,7 @@ struct SettingsView: View {
   @ObservedObject var configStore: ConfigStore
   @ObservedObject var coordinator: UsageCoordinator
 
-  @State private var tokenEntry = ""
-  @State private var hasToken = CredentialStore.hasToken
-  @State private var tokenMessage: String?
+  @State private var signedIn = CredentialStore.hasCredentials
 
   private var config: Binding<Config> { $configStore.config }
 
@@ -15,7 +13,7 @@ struct SettingsView: View {
     TabView {
       appearanceTab.tabItem { Label("Appearance", systemImage: "circle.dashed") }
       ringsTab.tabItem { Label("Rings", systemImage: "chart.pie") }
-      tokenTab.tabItem { Label("Token", systemImage: "key") }
+      connectionTab.tabItem { Label("Connection", systemImage: "link") }
     }
     .frame(width: 460, height: 420)
   }
@@ -102,59 +100,38 @@ struct SettingsView: View {
     )
   }
 
-  // MARK: Token
+  // MARK: Connection
 
-  private var tokenTab: some View {
+  private var connectionTab: some View {
     Form {
       Section {
-        if hasToken {
-          LabeledContent("Status") {
-            Label("Token saved", systemImage: "checkmark.seal.fill").foregroundStyle(.green)
-          }
-          Button("Replace…") {
-            NotificationCenter.default.post(name: .openOnboarding, object: nil)
-          }
-          Button("Remove token", role: .destructive) {
-            CredentialStore.delete()
-            hasToken = false
-            tokenMessage = "Removed."
-            Task { await coordinator.refresh(force: true) }
-          }
-        } else {
-          HStack(spacing: 8) {
-            SecureField("Paste token from `claude setup-token`", text: $tokenEntry)
-              .textFieldStyle(.roundedBorder)
-            Button("Paste") {
-              tokenEntry = CredentialStore.sanitize(
-                NSPasteboard.general.string(forType: .string) ?? "")
-            }
-          }
-          Button("Save") {
-            if CredentialStore.store(tokenEntry) {
-              hasToken = true
-              tokenEntry = ""
-              tokenMessage = "Saved."
-              coordinator.tokenChanged()
-            } else {
-              tokenMessage = "Could not save — is the token empty?"
-            }
-          }
-          .disabled(CredentialStore.sanitize(tokenEntry).isEmpty)
-          Button("Open setup guide…") {
-            NotificationCenter.default.post(name: .openOnboarding, object: nil)
+        LabeledContent("Claude Code") {
+          if signedIn {
+            Label("Signed in", systemImage: "checkmark.seal.fill").foregroundStyle(.green)
+          } else {
+            Label("Not signed in", systemImage: "person.slash").foregroundStyle(.orange)
           }
         }
-        if let tokenMessage {
-          Text(tokenMessage).font(.caption).foregroundStyle(.secondary)
+        Button("Open setup guide…") {
+          NotificationCenter.default.post(name: .openOnboarding, object: nil)
+        }
+        Button("Re-check now") {
+          signedIn = CredentialStore.hasCredentials
+          coordinator.credentialsChanged()
         }
       } header: {
         Text("Authentication")
       } footer: {
         Text(
           """
-          Generate one with `claude setup-token`. It does not expire, unlike \
-          Claude Code's own stored token. Kept in a Keychain item this app \
-          owns, so reading it never prompts, and never written to a file.
+          The widget reads the credential Claude Code stores — it is only ever \
+          read, never copied. A `claude setup-token` token cannot be used: the \
+          usage endpoint requires the user:profile scope, which only Claude \
+          Code's interactive sign-in grants.
+
+          That credential expires every few hours and only the `claude` CLI \
+          writes refreshes back, so if the rings go quiet the widget runs \
+          `claude auth status` itself to refresh it. That consumes no usage.
           """
         )
         .font(.caption).foregroundStyle(.secondary)
@@ -189,7 +166,7 @@ struct SettingsView: View {
       case .ok:
         Label("Live", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
       case .needsToken:
-        Label("No token", systemImage: "key").foregroundStyle(.secondary)
+        Label("Not signed in", systemImage: "person.slash").foregroundStyle(.secondary)
       case .failed(let message):
         Label(message, systemImage: "exclamationmark.triangle.fill")
           .foregroundStyle(.orange)

@@ -165,6 +165,132 @@ handful of relaunches can turn a short `Retry-After` into an hour-long one.
 
 ## Authentication
 
+The widget reads the OAuth credential **Claude Code already stores**. There is
+nothing to paste, and no token of its own.
+
+```bash
+claude    # sign in once, if you have not already
+```
+
+### Why not `claude setup-token`
+
+Because it does not work, and the endpoint says so precisely:
+
+```
+HTTP 403
+permission_error: OAuth token does not meet scope requirement user:profile
+```
+
+Claude Code's interactive login requests `user:profile user:inference
+user:sessions:claude`. `setup-token` grants inference only — it exists for API
+access, not account access. So a long-lived token can never read usage, no
+matter how many times you regenerate it.
+
+The desktop app is no help either: it keeps a claude.ai **web session** in an
+Electron cookie jar (`Claude Safe Storage`), not an OAuth bearer token.
+
+### Keeping it fresh
+
+That credential expires every few hours, and only the `claude` CLI writes
+refreshes back to the Keychain — so someone who works mainly in the desktop app
+can find it stale through no fault of their own.
+
+Rather than telling them to open a terminal, the widget runs `claude auth
+status` itself on a rejected token, then retries once. That command **consumes
+no usage** and refreshes the stored credential as a side effect.
+
+It deliberately does **not** touch the refresh token directly. OAuth refresh
+tokens commonly rotate, and spending one behind Claude Code's back could
+invalidate its session — breaking the very thing the widget depends on.
+Delegating to the CLI keeps that in the hands of the tool that owns it.
+
+A scope failure skips the refresh attempt entirely: refreshing cannot add a
+scope that was never granted, and retrying would only obscure the real reason.
+
+### Security
+
+- The credential is **only ever read**. This app never writes, copies or caches
+  it — not to `config.json`, not to logs, not to disk.
+- `/usr/bin/security` is tried first. Claude Code creates its Keychain item via
+  `security add-generic-password`, which puts that tool on the item's
+  access-control list, so reading through it is silent. Calling
+  `SecItemCopyMatching` from this app is a different binary asking for someone
+  else's item — exactly what macOS puts a dialog in front of.
+- Keychain grants bind to *code identity*, so an ad-hoc signature is
+  invalidated by every rebuild. `build-app.sh` signs with a real certificate
+  when one exists, which is why "Always Allow" sticks.
+- `OAuthCredentials` prints `<redacted>`; a unit test asserts it, so removing
+  the redaction turns the build red.
+- No credential of any kind is in this repository.
+
+### Diagnostics
+
+If the rings are not showing live data, ask the app why:
+
+```bash
+./dist/ClaudeUsageWidget.app/Contents/MacOS/ClaudeUsageWidget --check
+```
+
+It reports which Keychain items it found, whether the token parsed, whether the
+endpoint answered, and which windows came back. It never prints a token value —
+only metadata such as length and expiry.
+
+### Regenerating the screenshot
+
+```bash
+./dist/ClaudeUsageWidget.app/Contents/MacOS/ClaudeUsageWidget --render-preview docs/rings.png --demo
+```
+
+`--demo` uses fixed representative values, so the image in this README contains
+none of anyone's real numbers.
+
+## How it gets the data
+
+One source: `GET https://api.anthropic.com/api/oauth/usage` — the same endpoint
+`/usage` inside Claude Code talks to. It returns exact percentages:
+
+```json
+{
+  "five_hour":          { "utilization": 30.0, "resets_at": "..." },
+  "seven_day":          { "utilization": 47.0, "resets_at": "..." },
+  "seven_day_omelette": null
+}
+```
+
+There is deliberately **no local estimation**. An earlier version derived
+percentages from transcript token counts when the API was unreachable, which
+meant inventing a denominator — a Max plan's quotas are not published — and it
+once confidently displayed **3704%**. A ring that says "—" is more useful than
+one that says something false, so unavailable data now stays unavailable.
+
+This endpoint is **unofficial and undocumented**. Three things are worth
+knowing if you build something similar:
+
+- The `User-Agent: claude-code/<version>` header is not optional in practice.
+  Without it you land in an aggressively rate-limited bucket and get persistent
+  `429`s.
+- **Per-model windows use internal codenames, not model names.** There is no
+  `seven_day_fable`. A live response carries `seven_day_omelette` alongside
+  decoys like `cinder_cove`, `nimbus_quill` and `iguana_necktie`. The mapping
+  here is inferred by matching a live response against what `/usage` displayed
+  — an inference, not a contract. Pin a different key in Settings if it moves.
+- **`null` means 0%, not "unavailable".** A per-model key that is present but
+  null means the window applies to your account with no usage yet, which is
+  how `/usage` renders it.
+
+### Rate limiting
+
+The endpoint is limited more tightly than it looks. The widget polls every
+three minutes by default and enforces a floor between calls regardless of what
+asks, because the timer is not the only caller.
+
+Backoff is **persisted to disk**. Keeping it in memory quietly defeats it:
+quitting and reopening resets the timer and fires a request immediately, so a
+handful of relaunches can turn a short `Retry-After` into an hour-long one.
+`--check` honours the same wait and needs `--force` to override.
+
+## Authentication
+
 A single long-lived token from `claude setup-token`, pasted once:
 
 ```bash

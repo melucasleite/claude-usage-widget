@@ -33,6 +33,10 @@ final class UsageCoordinator: ObservableObject {
   private var lastFailureReason: String?
   private var consecutiveFailures = 0
   private var cachedWindows: UsageWindows?
+  /// Diagnostics for the status line: whether we tried to self-heal, and how
+  /// that went.
+  private(set) var didAttemptRefresh = false
+  private(set) var lastRefreshOutcome: CredentialRefresher.Outcome?
 
   /// Floor between live calls, whatever asks. The timer is not the only caller.
   private static let minimumLiveInterval: TimeInterval = 20
@@ -81,12 +85,12 @@ final class UsageCoordinator: ObservableObject {
     timer = nil
   }
 
-  /// Called after the token changes, to pick it up at once.
+  /// Called after the credential situation changes, to pick it up at once.
   ///
   /// A new token clears a wait we imposed because of *that token* — but not a
   /// rate limit, which is about request volume and is indifferent to who is
   /// asking. Clearing it would just walk straight back into the limit.
-  func tokenChanged() {
+  func credentialsChanged() {
     let rateLimited = (lastFailureReason ?? "").localizedCaseInsensitiveContains("rate limited")
     if !rateLimited {
       liveBackoffUntil = nil
@@ -112,7 +116,7 @@ final class UsageCoordinator: ObservableObject {
     var next = UsageSnapshot()
     next.lastUpdated = snapshot.lastUpdated
 
-    guard CredentialStore.hasToken else {
+    guard CredentialStore.hasCredentials else {
       snapshot = UsageSnapshot(rings: [:], lastUpdated: nil, status: .needsToken)
       return
     }
@@ -123,7 +127,7 @@ final class UsageCoordinator: ObservableObject {
 
     if mayFetch {
       do {
-        let windows = try await live.fetch()
+        let windows = try await fetchWithAutoRefresh()
         cachedWindows = windows
         lastLiveFetch = now
         liveBackoffUntil = nil
@@ -151,8 +155,44 @@ final class UsageCoordinator: ObservableObject {
     snapshot = next
   }
 
+  /// Fetches, and on a rejected token asks Claude Code to refresh once before
+  /// giving up.
+  ///
+  /// The credential expires every few hours and only the `claude` CLI writes
+  /// refreshes back — someone working mainly in the desktop app would otherwise
+  /// watch the widget go dark and be told to open a terminal they were not
+  /// using. `claude auth status` costs no usage, so trying it is close to free
+  /// and saves the trip.
+  ///
+  /// Exactly one attempt: if the refresh does not fix it, the token is not
+  /// merely stale and retrying in a loop would only obscure that.
+  private func fetchWithAutoRefresh() async throws -> UsageWindows {
+    do {
+      return try await live.fetch()
+    } catch OAuthUsageProvider.ProviderError.unauthorized(let detail) {
+      // A scope failure is permanent — refreshing cannot add a scope the
+      // credential was never granted, so do not waste the attempt.
+      if let detail, detail.localizedCaseInsensitiveContains("scope") {
+        throw OAuthUsageProvider.ProviderError.unauthorized(detail: detail)
+      }
+      didAttemptRefresh = true
+      let outcome = await CredentialRefresher.refresh()
+      guard outcome.succeeded else {
+        lastRefreshOutcome = outcome
+        throw OAuthUsageProvider.ProviderError.unauthorized(detail: detail)
+      }
+      lastRefreshOutcome = outcome
+      return try await live.fetch()
+    }
+  }
+
   private func statusText(now: Date) -> String {
-    let reason = lastFailureReason ?? "Live source unavailable"
+    var reason = lastFailureReason ?? "Live source unavailable"
+    // If we tried to self-heal and could not, say so — otherwise "token
+    // rejected" reads as though nothing was attempted.
+    if case .cliNotFound = lastRefreshOutcome {
+      reason += " · could not find the `claude` CLI to refresh it"
+    }
     guard let until = liveBackoffUntil, until > now else { return reason }
     // Lead with *why*. A countdown alone tells you nothing you can act on.
     return "\(reason) · retry \(Int(until.timeIntervalSince(now)))s"

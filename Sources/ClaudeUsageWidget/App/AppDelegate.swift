@@ -64,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // First run: bring the setup guide forward rather than leaving someone
     // staring at a widget that cannot show anything yet.
-    if !CredentialStore.hasToken { openOnboarding() }
+    if !CredentialStore.hasCredentials { openOnboarding() }
   }
 
   func applicationWillTerminate(_ notification: Notification) {

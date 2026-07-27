@@ -3,8 +3,8 @@ import XCTest
 @testable import ClaudeUsageWidget
 
 /// Tests cover the parts that fail quietly: decoding a payload whose key names
-/// are not guaranteed, sanitising pasted tokens, and ring geometry. None of
-/// these would be obvious from looking at the widget.
+/// are not guaranteed, credential parsing, error surfacing, and ring geometry.
+/// None of these would be obvious from looking at the widget.
 final class UsageWindowsTests: XCTestCase {
 
   func testDecodesKnownWindows() throws {
@@ -72,31 +72,70 @@ final class UsageWindowsTests: XCTestCase {
   }
 }
 
-final class TokenTests: XCTestCase {
+final class CredentialTests: XCTestCase {
 
-  /// Tokens are pasted out of a terminal, where the shell wraps them. Trimming
-  /// only the ends leaves internal newlines in a token that looks right, saves
-  /// fine, and then fails authentication with nothing to explain why.
-  func testStripsInternalWhitespaceNotJustTheEnds() {
-    let wrapped = "  sk-ant-oat01-AAAA\nBBBB\r\n  CCCC \t DDDD\n"
-    XCTAssertEqual(CredentialStore.sanitize(wrapped), "sk-ant-oat01-AAAABBBBCCCCDDDD")
+  func testParsesWrappedEnvelope() throws {
+    let json = """
+      { "claudeAiOauth": { "accessToken": "tok_example", "expiresAt": 99999999999999 } }
+      """.data(using: .utf8)!
+    let creds = try CredentialStore.parse(json)
+    XCTAssertEqual(creds.accessToken, "tok_example")
+    XCTAssertFalse(creds.isExpired)
   }
 
-  func testLeavesACleanTokenAlone() {
-    let clean = "sk-ant-oat01-abcdef123456"
-    XCTAssertEqual(CredentialStore.sanitize(clean), clean)
+  func testParsesBareEnvelope() throws {
+    let json = #"{ "accessToken": "tok_example" }"#.data(using: .utf8)!
+    XCTAssertEqual(try CredentialStore.parse(json).accessToken, "tok_example")
   }
 
-  func testWhitespaceOnlyBecomesEmpty() {
-    XCTAssertTrue(CredentialStore.sanitize(" \n\t \r\n ").isEmpty)
+  /// An expired-looking timestamp must NOT block the request. Claude Code
+  /// refreshes in memory without always writing back, so the stored copy
+  /// routinely reads as expired while the token still works. The server is the
+  /// authority on that, not a local clock.
+  func testExpiredTimestampIsAdvisoryNotFatal() throws {
+    let json = #"{ "accessToken": "tok", "expiresAt": 1000 }"#.data(using: .utf8)!
+    let creds = try CredentialStore.parse(json)
+    XCTAssertEqual(creds.accessToken, "tok")
+    XCTAssertTrue(creds.isExpired, "expiry is still reported…")
+    // …but parsing succeeded, so the caller gets to try anyway.
+  }
+
+  func testRejectsEnvelopeWithoutAToken() {
+    XCTAssertThrowsError(try CredentialStore.parse(Data(#"{"claudeAiOauth":{}}"#.utf8)))
+    XCTAssertThrowsError(try CredentialStore.parse(Data("not json".utf8)))
   }
 
   /// A token must never be printable. This test exists so that anyone who
   /// "helpfully" removes the custom description gets a red build.
   func testDescriptionRedactsToken() {
-    let creds = OAuthCredentials(accessToken: "super-secret-value")
+    let creds = OAuthCredentials(accessToken: "super-secret-value", expiresAt: nil)
     XCTAssertFalse("\(creds)".contains("super-secret-value"))
     XCTAssertFalse(String(reflecting: creds).contains("super-secret-value"))
+  }
+}
+
+/// The endpoint explains its own refusals; we must not discard that.
+final class ErrorDetailTests: XCTestCase {
+
+  /// The real 403 that sent today's design back to the drawing board.
+  func testExtractsScopeFailureMessage() {
+    let body = Data(
+      #"{"type":"error","error":{"type":"permission_error","message":"OAuth token does not meet scope requirement user:profile"}}"#
+        .utf8)
+    let detail = OAuthUsageProvider.errorDetail(from: body)
+    XCTAssertNotNil(detail)
+    XCTAssertTrue(detail!.contains("user:profile"))
+    XCTAssertTrue(detail!.contains("permission_error"))
+  }
+
+  func testFallsBackToRawBody() {
+    XCTAssertEqual(
+      OAuthUsageProvider.errorDetail(from: Data("upstream exploded".utf8)),
+      "upstream exploded")
+  }
+
+  func testEmptyBodyYieldsNil() {
+    XCTAssertNil(OAuthUsageProvider.errorDetail(from: Data()))
   }
 }
 

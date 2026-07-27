@@ -64,7 +64,7 @@ struct WidgetView: View {
     .overlay(alignment: .topTrailing) { if hovering && !needsToken { controls } }
     .opacity(config.opacity)
     .onHover { hovering = $0 }
-    .help(needsToken ? "Set up a token to start showing usage" : tooltip)
+    .help(needsToken ? "Sign in to Claude Code to start showing usage" : tooltip)
   }
 
   // MARK: First run
@@ -80,16 +80,16 @@ struct WidgetView: View {
             style: StrokeStyle(lineWidth: 6, dash: [7, 7])
           )
           .foregroundStyle(.secondary.opacity(0.35))
-        Image(systemName: "key.fill")
+        Image(systemName: "person.crop.circle.badge.questionmark")
           .font(.system(size: config.widgetSize * 0.16, weight: .medium))
           .foregroundStyle(Color(hex: 0xFF375F))
       }
       .frame(width: config.widgetSize * 0.62, height: config.widgetSize * 0.62)
 
       VStack(spacing: 3) {
-        Text("Token needed")
+        Text("Not signed in")
           .font(.system(size: 14, weight: .semibold, design: .rounded))
-        Text("to read your usage limits")
+        Text("Claude Code sign-in required")
           .font(.system(size: 11, design: .rounded))
           .foregroundStyle(.secondary)
       }

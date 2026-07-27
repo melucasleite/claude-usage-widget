@@ -1,76 +1,65 @@
 import AppKit
 import SwiftUI
 
-/// First-run setup: generate a token, paste it, save it, prove it works.
+/// First-run setup: make sure Claude Code is signed in, then prove the
+/// connection works.
 ///
-/// Presented as one panel with numbered steps rather than a multi-page wizard.
-/// There are only three things to do, and being able to see all of them at
-/// once — including the one that failed — beats clicking Next.
-///
-/// The final step actually calls the API. "Saved" is not the same as "works",
-/// and finding out here is much kinder than watching empty rings later and
-/// wondering which step went wrong.
+/// There is nothing to paste. The usage endpoint requires the `user:profile`
+/// scope, which only Claude Code's interactive login grants — a token from
+/// `claude setup-token` is refused with
+/// `permission_error: does not meet scope requirement user:profile`. So the
+/// setup is "sign in to Claude Code once", and this screen exists mainly to
+/// say that clearly and then verify it.
 struct OnboardingView: View {
   @ObservedObject var coordinator: UsageCoordinator
   var onFinished: () -> Void
 
-  @State private var tokenEntry = ""
-  @State private var saved = CredentialStore.hasToken
   @State private var testState: TestState = .idle
-  @State private var copiedCommand = false
+  @State private var copied = false
+  @State private var foundCLI = CredentialRefresher.locate() != nil
+  @State private var signedIn = CredentialStore.hasCredentials
 
   private enum TestState: Equatable {
-    case idle
-    case testing
+    case idle, testing
     case passed(String)
     case failed(String)
   }
 
-  private let command = "claude setup-token"
+  private let command = "claude"
 
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 22) {
         header
-        step(
-          1, "Generate a token",
-          "Run this in a terminal. It asks you to authorise in the browser, then prints a token that does not expire."
-        ) {
+
+        step(1, "Sign in to Claude Code", signInDetail) {
           HStack(spacing: 8) {
             Text(command)
               .font(.system(.body, design: .monospaced))
               .padding(.horizontal, 10).padding(.vertical, 6)
               .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
               .textSelection(.enabled)
-            Button(copiedCommand ? "Copied" : "Copy") {
+            Button(copied ? "Copied" : "Copy") {
               NSPasteboard.general.clearContents()
               NSPasteboard.general.setString(command, forType: .string)
-              copiedCommand = true
+              copied = true
+            }
+            if signedIn {
+              Label("signed in", systemImage: "checkmark.circle.fill")
+                .font(.callout).foregroundStyle(.green)
             }
           }
         }
 
         step(
-          2, "Paste it here", "Whitespace and line breaks from the terminal are removed for you."
+          2, "Check the connection",
+          "Reads your limits once. Nothing is sent anywhere except that request."
         ) {
-          HStack(spacing: 8) {
-            SecureField("sk-ant-oat…", text: $tokenEntry)
-              .textFieldStyle(.roundedBorder)
-            Button("Paste") {
-              tokenEntry = CredentialStore.sanitize(
-                NSPasteboard.general.string(forType: .string) ?? "")
-            }
-          }
-        }
-
-        step(3, "Save and test", "Stored in your Keychain, then checked against the live endpoint.")
-        {
           VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-              Button("Save & Test") { saveAndTest() }
+              Button("Test connection") { test() }
                 .keyboardShortcut(.defaultAction)
-                .disabled(
-                  CredentialStore.sanitize(tokenEntry).isEmpty || testState == .testing)
+                .disabled(testState == .testing)
               if testState == .testing { ProgressView().controlSize(.small) }
             }
             result
@@ -82,17 +71,27 @@ struct OnboardingView: View {
       }
       .padding(28)
     }
-    .frame(width: 520, height: 560)
+    .frame(width: 520, height: 540)
+    .onAppear {
+      signedIn = CredentialStore.hasCredentials
+      foundCLI = CredentialRefresher.locate() != nil
+    }
   }
 
   // MARK: Pieces
+
+  private var signInDetail: String {
+    foundCLI
+      ? "Run this in a terminal and sign in. The widget then reads the same credential — you do not need to keep the terminal open."
+      : "Claude Code does not appear to be installed. Install it first: the widget reads the credential it stores."
+  }
 
   private var header: some View {
     VStack(alignment: .leading, spacing: 6) {
       Text("Set up Claude Usage Widget")
         .font(.system(size: 20, weight: .semibold, design: .rounded))
       Text(
-        "The widget reads your plan's usage limits directly from Anthropic. That needs a token — a one-time setup."
+        "The widget reads your plan's limits using the credential Claude Code already stores. There is nothing to paste."
       )
       .foregroundStyle(.secondary)
       .fixedSize(horizontal: false, vertical: true)
@@ -100,8 +99,7 @@ struct OnboardingView: View {
   }
 
   private func step<Content: View>(
-    _ number: Int, _ title: String, _ detail: String,
-    @ViewBuilder content: () -> Content
+    _ number: Int, _ title: String, _ detail: String, @ViewBuilder content: () -> Content
   ) -> some View {
     HStack(alignment: .top, spacing: 14) {
       Text("\(number)")
@@ -123,10 +121,7 @@ struct OnboardingView: View {
   private var result: some View {
     switch testState {
     case .idle:
-      if saved {
-        Label("A token is already saved. Save & Test to replace it.", systemImage: "info.circle")
-          .font(.callout).foregroundStyle(.secondary)
-      }
+      EmptyView()
     case .testing:
       Text("Checking…").font(.callout).foregroundStyle(.secondary)
     case .passed(let summary):
@@ -138,57 +133,61 @@ struct OnboardingView: View {
         Label(message, systemImage: "exclamationmark.triangle.fill")
           .font(.callout).foregroundStyle(.orange)
           .fixedSize(horizontal: false, vertical: true)
-        if message.contains("rate limited") {
-          Text("Nothing is wrong with the token — the endpoint is just busy.")
-            .font(.caption).foregroundStyle(.secondary)
-        } else {
-          Text("Generate a fresh token with `claude setup-token` and try again.")
-            .font(.caption).foregroundStyle(.secondary)
-        }
+        Text(hint(for: message))
+          .font(.caption).foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
       }
     }
+  }
+
+  /// The failure modes are genuinely different and want genuinely different
+  /// advice; a single "try again" would be useless for two of the three.
+  private func hint(for message: String) -> String {
+    if message.localizedCaseInsensitiveContains("scope") {
+      return
+        "This credential lacks the user:profile scope. A `claude setup-token` token cannot work here — sign in with `claude` instead."
+    }
+    if message.localizedCaseInsensitiveContains("rate limited") {
+      return "Nothing is wrong with your sign-in — the endpoint is just busy."
+    }
+    return "Run `claude` in a terminal to sign in, then test again."
   }
 
   private var footer: some View {
     HStack {
       if case .passed = testState {
-        Button("Done") { onFinished() }
-          .keyboardShortcut(.defaultAction)
+        Button("Done") { onFinished() }.keyboardShortcut(.defaultAction)
       } else {
         Button("Skip for now") { onFinished() }
       }
       Spacer()
-      Text("The token is stored in your Keychain, never in a file.")
+      Text("Your credential is only ever read, never copied.")
         .font(.caption).foregroundStyle(.secondary)
     }
   }
 
   // MARK: Actions
 
-  private func saveAndTest() {
-    guard CredentialStore.store(tokenEntry) else {
-      testState = .failed("Could not save the token.")
+  private func test() {
+    signedIn = CredentialStore.hasCredentials
+    guard signedIn else {
+      testState = .failed("Claude Code is not signed in on this Mac.")
       return
     }
-    saved = true
-    tokenEntry = ""
 
-    // Respect an active rate limit. Testing straight through one produces a
-    // failure that says nothing about the token — which is exactly the
-    // confusion this screen exists to prevent.
+    // Respect an active rate limit: testing through one produces a failure that
+    // says nothing about the sign-in, which is the confusion this screen exists
+    // to prevent.
     if let state = UsageCoordinator.loadPersistedRateLimitState(),
       let until = state.backoffUntil, until > Date()
     {
       let minutes = max(1, Int(until.timeIntervalSinceNow / 60))
       testState = .failed(
-        "Saved, but cannot test yet: the usage endpoint is rate limited for another "
-          + "\(minutes) minute(s). The widget will pick it up automatically.")
-      coordinator.tokenChanged()
+        "Cannot test yet: the endpoint is rate limited for another \(minutes) minute(s).")
       return
     }
 
     testState = .testing
-
     Task {
       do {
         let windows = try await OAuthUsageProvider().fetch()
@@ -199,7 +198,7 @@ struct OnboardingView: View {
         }
         testState = .passed(
           "Working — \(live.count) of \(RingMetric.allCases.count) rings reporting.")
-        coordinator.tokenChanged()
+        coordinator.credentialsChanged()
       } catch {
         testState = .failed(error.localizedDescription)
       }

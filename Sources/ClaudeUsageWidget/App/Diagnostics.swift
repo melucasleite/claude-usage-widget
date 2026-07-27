@@ -17,22 +17,25 @@ enum Diagnostics {
     print("Claude Usage Widget — diagnostics\n")
 
     // 1. Token
-    print("[1] Token")
-    if CredentialStore.loadFromKeychain() != nil {
-      print("    ✓ stored in this app's Keychain item")
-      print("      service: \(CredentialStore.service)")
-    } else if CredentialStore.loadFromEnvironment() != nil {
-      print("    ✓ from CLAUDE_CODE_OAUTH_TOKEN")
-      print("      note: only set when launched from a shell")
-    } else {
+    print("[1] Credential")
+    print("    · Claude Code CLI: \(CredentialRefresher.locate()?.path ?? "not found")")
+    let services = CredentialStore.discoverServiceNames()
+    print("    · candidate Keychain services: \(services.joined(separator: ", "))")
+    guard let creds = CredentialStore.load() else {
       print(
         """
-            ✗ no token.
+            ✗ Claude Code is not signed in on this Mac.
 
-              Run `claude setup-token`, then paste the result into
-              Settings ▸ Token — or open the app and follow the setup steps.
+              Run `claude` in a terminal and sign in. A `claude setup-token`
+              token will NOT work here: the usage endpoint requires the
+              user:profile scope, which only the interactive sign-in grants.
         """)
       exit(1)
+    }
+    print("    ✓ read Claude Code's credential")
+    if let expiry = creds.expiresAt {
+      let mins = Int(expiry.timeIntervalSinceNow / 60)
+      print("    · expires \(expiry.formatted(date: .abbreviated, time: .standard)) (\(mins) min)")
     }
     print("    · value: <redacted, and it stays that way>\n")
 
