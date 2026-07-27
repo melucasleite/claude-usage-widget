@@ -185,6 +185,34 @@ ditto -c -k --keepParent "$APP" "$ZIP"
 cat "${ZIP}.sha256"
 echo "    $(du -h "$ZIP" | cut -f1)  $ZIP"
 
+# Disk image, built from the already-stapled app so the ticket travels inside.
+DMG="dist/${APP_NAME}-${VERSION}.dmg"
+./Scripts/make-dmg.sh "$VERSION" --app "$APP" >/dev/null
+[[ -f "$DMG" ]] || fail "DMG was not produced"
+
+# The .dmg is its own distributable and needs its own ticket: Gatekeeper
+# assesses the container the user actually double-clicks, not just the app
+# inside it. Stapling the app alone leaves the disk image unnotarized.
+if [[ "$SKIP_NOTARIZE" != "1" ]] && xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
+  if xcrun stapler validate "$DMG" >/dev/null 2>&1; then
+    echo "    DMG already stapled"
+  else
+    step "Notarizing the disk image"
+    codesign --force --sign "$IDENTITY" --timestamp "$DMG" >/dev/null 2>&1 || true
+    xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait \
+      || fail "DMG notarization failed"
+    xcrun stapler staple "$DMG"
+  fi
+  ASSESS_DMG="$(spctl -a -vvv -t open --context context:primary-signature "$DMG" 2>&1 || true)"
+  grep -q "accepted" <<<"$ASSESS_DMG" || fail "Gatekeeper rejected the disk image"
+  echo "    disk image accepted by Gatekeeper"
+else
+  echo "    (DMG not notarized — it will warn on other Macs)"
+fi
+
+( cd "$(dirname "$DMG")" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256" )
+echo "    $(du -h "$DMG" | cut -f1)  $DMG"
+
 # ---------------------------------------------------------------------------
 # 7. Publish.
 # ---------------------------------------------------------------------------
@@ -199,20 +227,25 @@ command -v gh >/dev/null || fail "gh CLI not installed"
 
 if gh release view "$TAG" >/dev/null 2>&1; then
   echo "    $TAG exists — uploading assets"
-  gh release upload "$TAG" "$ZIP" "${ZIP}.sha256" --clobber
+  gh release upload "$TAG" "$DMG" "${DMG}.sha256" "$ZIP" "${ZIP}.sha256" --clobber
 else
   ARGS=(--title "$APP_NAME $VERSION" --notes-file -)
   [[ "$DRAFT" == "1" ]] && ARGS+=(--draft)
-  gh release create "$TAG" "$ZIP" "${ZIP}.sha256" "${ARGS[@]}" <<EOF
-Signed and notarized build for macOS 14+.
+  gh release create "$TAG" "$DMG" "${DMG}.sha256" "$ZIP" "${ZIP}.sha256" "${ARGS[@]}" <<EOF
+<p align="center">
+  <img src="https://raw.githubusercontent.com/melucasleite/claude-usage-widget/main/docs/icon.png" width="128" alt="${APP_NAME}">
+</p>
 
-**Install:** download the zip, unzip, drag \`${APP_NAME}.app\` to Applications.
-It is notarized, so it opens normally — no right-click ▸ Open.
+Your Claude Code usage as Apple-Watch-style activity rings — 5-hour window,
+weekly, and Fable.
 
-Requires Claude Code signed in on your own machine: the widget reads *your*
-credentials and *your* transcripts.
+**Install:** download the `.dmg`, open it, drag the app to Applications.
+
+Requires macOS 14+ and Claude Code signed in on your own machine: the widget
+reads *your* credentials and *your* transcripts.
 
 \`\`\`
+$(shasum -a 256 "$DMG" | awk '{print $1}')  $(basename "$DMG")
 $(shasum -a 256 "$ZIP" | awk '{print $1}')  $(basename "$ZIP")
 \`\`\`
 EOF

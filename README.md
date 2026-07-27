@@ -25,11 +25,13 @@
 
 **[⬇ Download the latest release](https://github.com/melucasleite/claude-usage-widget/releases/latest)**
 
-Unzip and drag `ClaudeUsageWidget.app` to Applications. It is signed and
-notarized, so it opens normally — no right-click ▸ Open, no warning dialog.
+Open the `.dmg` and drag the app across to Applications.
 
 Requires macOS 14+ and Claude Code signed in on your own machine: the widget
 reads *your* credentials and *your* transcripts, never anyone else's.
+
+To keep it around permanently, add it under System Settings ▸ General ▸
+Login Items.
 
 Each ring is one limit:
 
@@ -42,9 +44,10 @@ Each ring is one limit:
 Three rings, because three is what the plan actually exposes. They are
 data-driven, so you can turn any of them off in Settings.
 
-## Install
+## Building from source
 
-Requires macOS 14+ and a Claude subscription that Claude Code is signed in to.
+Not required to use it — [the release](https://github.com/melucasleite/claude-usage-widget/releases/latest)
+is the easy path. This is for hacking on it.
 
 ```bash
 git clone https://github.com/melucasleite/claude-usage-widget.git
@@ -52,8 +55,16 @@ cd claude-usage-widget
 ./Scripts/build-app.sh --run
 ```
 
-That produces `dist/ClaudeUsageWidget.app`. Drag it to `/Applications` and add
-it to Login Items if you want it always around.
+That produces `dist/ClaudeUsageWidget.app` and launches it.
+
+| | |
+|---|---|
+| `swift build` / `swift test` | day-to-day |
+| `./Scripts/build-app.sh --run` | build the `.app` and launch |
+| `./Scripts/make-icon.sh <png>` | regenerate the icon |
+| `./Scripts/make-dmg.sh <version>` | drag-to-Applications disk image |
+| `./Scripts/release.sh <version>` | sign, notarize, package, publish |
+| `--check` | diagnose credentials and the live endpoint |
 
 > **Xcode note.** SwiftUI's `@State` and friends are macros now, expanded by
 > `libSwiftUIMacros.dylib`, which ships inside Xcode and *not* with the
@@ -408,8 +419,11 @@ than a packaging step. A plain `.icns` works fine everywhere.
 ./Scripts/release.sh 1.0.0
 ```
 
-Signs with the Developer ID certificate, notarizes, staples, verifies, zips
-with a checksum, and creates the GitHub Release. Useful flags: `--no-publish`
+Signs with the Developer ID certificate, notarizes, staples, verifies, builds
+both a drag-to-Applications `.dmg` and a `.zip` with checksums, and creates the
+GitHub Release. The disk image is notarized and stapled separately from the app
+inside it — Gatekeeper assesses the container the user double-clicks, so
+stapling only the app leaves the `.dmg` itself unnotarized. Useful flags: `--no-publish`
 to package only, `--draft`, and `--app PATH` to reuse a bundle you already
 built (a bundle that already carries a stapled ticket is not re-submitted).
 
