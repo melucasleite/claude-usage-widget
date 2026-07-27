@@ -14,6 +14,9 @@ final class StatusItemController {
 
   var onToggleWidget: (() -> Void)?
   var onOpenSettings: (() -> Void)?
+  /// Lets the menu label reflect reality — after the widget is hidden, this is
+  /// the only route back, so "Show Widget" needs to say so.
+  var isWidgetVisible: (() -> Bool)?
 
   init(coordinator: UsageCoordinator, configStore: ConfigStore) {
     self.coordinator = coordinator
@@ -124,8 +127,10 @@ final class StatusItemController {
     toggle.state = configStore.config.alwaysOnTop ? .on : .off
     menu.addItem(toggle)
 
+    let visible = isWidgetVisible?() ?? true
     let show = NSMenuItem(
-      title: "Show Widget", action: #selector(toggleWidget), keyEquivalent: "")
+      title: visible ? "Hide Widget" : "Show Widget",
+      action: #selector(toggleWidget), keyEquivalent: "")
     show.target = self
     menu.addItem(show)
 

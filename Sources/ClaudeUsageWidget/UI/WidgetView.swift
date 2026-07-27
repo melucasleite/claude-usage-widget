@@ -87,6 +87,7 @@ struct WidgetView: View {
     }
     .padding(config.showBackground ? 16 : 4)
     .background(background)
+    .overlay(alignment: .topLeading) { if hovering { closeButton } }
     .overlay(alignment: .topTrailing) { if hovering { controls } }
     .opacity(config.opacity)
     .onHover { hovering = $0 }
@@ -179,6 +180,26 @@ struct WidgetView: View {
     .frame(width: config.widgetSize)
   }
 
+  /// Hover-revealed dismiss, mirroring the controls on the right.
+  ///
+  /// This *hides* the widget rather than quitting — the app keeps running and
+  /// the menu bar brings it back. Quitting lives in the menu, where an
+  /// irreversible action belongs.
+  private var closeButton: some View {
+    Button {
+      NotificationCenter.default.post(name: .hideWidget, object: nil)
+    } label: {
+      Image(systemName: "xmark")
+        .font(.system(size: 9, weight: .bold))
+        .foregroundStyle(.secondary)
+        .frame(width: 18, height: 18)
+        .background(.ultraThinMaterial, in: Circle())
+    }
+    .buttonStyle(.plain)
+    .help("Hide the widget — bring it back from the menu bar")
+    .padding(6)
+  }
+
   /// Small hover-revealed refresh/settings affordances, so the widget stays
   /// clean when you are not touching it.
   private var controls: some View {
@@ -234,4 +255,5 @@ struct WidgetView: View {
 
 extension Notification.Name {
   static let openSettings = Notification.Name("ClaudeUsageWidget.openSettings")
+  static let hideWidget = Notification.Name("ClaudeUsageWidget.hideWidget")
 }

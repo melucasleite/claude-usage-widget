@@ -25,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let statusItem = StatusItemController(coordinator: coordinator, configStore: configStore)
     statusItem.onToggleWidget = { [weak self] in self?.toggleWidget() }
     statusItem.onOpenSettings = { [weak self] in self?.openSettings() }
+    statusItem.isWidgetVisible = { [weak self] in self?.panel?.isVisible ?? false }
     self.statusItem = statusItem
 
     // Push config changes to everything that cares.
@@ -35,6 +36,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self?.panel?.applyConfig(config)
         self?.coordinator.updateConfig(config)
       }
+      .store(in: &cancellables)
+
+    NotificationCenter.default.publisher(for: .hideWidget)
+      .receive(on: RunLoop.main)
+      .sink { [weak self] _ in self?.hideWidget() }
       .store(in: &cancellables)
 
     NotificationCenter.default.publisher(for: .openSettings)
@@ -67,6 +73,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   // MARK: - Windows
+
+  /// Hides the widget, keeping the app alive.
+  ///
+  /// Guards against stranding: with the menu bar readout switched off, hiding
+  /// the only visible surface would leave no way back short of relaunching.
+  /// So closing turns the menu bar item back on if it is off.
+  private func hideWidget() {
+    if !configStore.config.showMenuBarItem {
+      configStore.config.showMenuBarItem = true
+    }
+    panel?.orderOut(nil)
+  }
 
   private func toggleWidget() {
     guard let panel else { return }
