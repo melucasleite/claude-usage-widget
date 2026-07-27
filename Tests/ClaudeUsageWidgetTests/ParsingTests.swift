@@ -265,3 +265,51 @@ final class RingHitTestingTests: XCTestCase {
       "centre hole collapsed")
   }
 }
+
+/// Guards the rule that cosmetic settings never cause network traffic.
+///
+/// This exists because they used to. Dragging the widget writes its origin on
+/// every move event, each write triggered a refresh, and a single drag was
+/// enough to earn a 429 from the usage endpoint.
+final class ConfigFingerprintTests: XCTestCase {
+
+  func testCosmeticChangesDoNotAffectTheFingerprint() {
+    let base = Config()
+    var moved = base
+
+    moved.windowOrigin = CGPoint(x: 400, y: 300)
+    moved.pinnedMetric = .weekly
+    moved.opacity = 0.5
+    moved.widgetSize = 240
+    moved.ringThickness = 9
+    moved.ringSpacing = 2
+    moved.showLegend = true
+    moved.showBackground = false
+    moved.showCenterReadout = false
+    moved.showMenuBarItem = false
+    moved.alwaysOnTop = false
+    moved.showOnAllSpaces = false
+    moved.enabledMetrics = [.weekly]
+
+    XCTAssertNotEqual(moved, base, "the config really did change")
+    XCTAssertEqual(
+      moved.dataFingerprint, base.dataFingerprint,
+      "cosmetic changes must not trigger a fetch")
+  }
+
+  func testDataChangesDoAffectTheFingerprint() {
+    let base = Config()
+
+    var toggled = base
+    toggled.useLiveAPI = false
+    XCTAssertNotEqual(toggled.dataFingerprint, base.dataFingerprint)
+
+    var rekeyed = base
+    rekeyed.fableWindowKey = "seven_day_omelette"
+    XCTAssertNotEqual(rekeyed.dataFingerprint, base.dataFingerprint)
+
+    var budgeted = base
+    budgeted.estimatedWeeklyBudgetUSD = 4000
+    XCTAssertNotEqual(budgeted.dataFingerprint, base.dataFingerprint)
+  }
+}

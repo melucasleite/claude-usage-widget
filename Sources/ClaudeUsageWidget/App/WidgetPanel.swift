@@ -10,6 +10,7 @@ final class WidgetPanel: NSPanel {
 
   private let configStore: ConfigStore
   private var hostingView: NSHostingView<AnyView>?
+  private var moveDebounce: Timer?
 
   init(coordinator: UsageCoordinator, configStore: ConfigStore) {
     self.configStore = configStore
@@ -79,8 +80,23 @@ final class WidgetPanel: NSPanel {
 
   // MARK: - Position persistence
 
+  /// Coalesces a drag into one write.
+  ///
+  /// `didMoveNotification` fires continuously while dragging. Writing config on
+  /// each one meant a disk write and a published change per frame, and every
+  /// published change used to trigger a network refresh — one drag, dozens of
+  /// API calls, an inevitable 429. The refresh side is fixed in
+  /// `UsageCoordinator`; this stops the churn at the source.
   @objc private func windowMoved() {
-    configStore.config.windowOrigin = CGPoint(x: frame.origin.x, y: frame.origin.y)
+    moveDebounce?.invalidate()
+    moveDebounce = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) {
+      [weak self] _ in
+      guard let self else { return }
+      MainActor.assumeIsolated {
+        self.configStore.config.windowOrigin = CGPoint(
+          x: self.frame.origin.x, y: self.frame.origin.y)
+      }
+    }
   }
 
   private func restorePosition() {

@@ -90,6 +90,29 @@ struct Config: Codable, Equatable {
   var estimatedWeeklyBudgetUSD: Double = 0
   var estimatedFableBudgetUSD: Double = 0
 
+  /// The subset of settings that actually change *what we fetch*.
+  ///
+  /// Everything else — window position, pinned ring, opacity, ring geometry —
+  /// is cosmetic and must never cause a network request. Dragging the widget
+  /// writes `windowOrigin` on every move event; if that triggered a refresh,
+  /// one drag would fire dozens of calls and earn a 429. It did, and it did.
+  struct DataFingerprint: Equatable {
+    var useLiveAPI: Bool
+    var fableWindowKey: String
+    var estimatedFiveHourBudgetUSD: Double
+    var estimatedWeeklyBudgetUSD: Double
+    var estimatedFableBudgetUSD: Double
+  }
+
+  var dataFingerprint: DataFingerprint {
+    DataFingerprint(
+      useLiveAPI: useLiveAPI,
+      fableWindowKey: fableWindowKey,
+      estimatedFiveHourBudgetUSD: estimatedFiveHourBudgetUSD,
+      estimatedWeeklyBudgetUSD: estimatedWeeklyBudgetUSD,
+      estimatedFableBudgetUSD: estimatedFableBudgetUSD)
+  }
+
   /// Ordered, enabled metrics — the single source of truth for the UI.
   var visibleMetrics: [RingMetric] {
     ringOrder.filter { enabledMetrics.contains($0) }

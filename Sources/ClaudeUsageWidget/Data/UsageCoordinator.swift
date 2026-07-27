@@ -31,15 +31,37 @@ final class UsageCoordinator: ObservableObject {
   private var liveBackoffUntil: Date?
   private var consecutiveLiveFailures = 0
 
+  /// Floor on how often the live endpoint may be called, whatever asks.
+  ///
+  /// The timer is not the only caller — settings changes and the Refresh menu
+  /// item can all land at once. This is the backstop that makes a burst
+  /// impossible rather than merely unlikely.
+  private static let minimumLiveInterval: TimeInterval = 20
+  private var lastLiveFetch: Date?
+  /// Last good response, replayed while throttled so the rings stay live
+  /// rather than falling back to estimates for the sake of a few seconds.
+  private var cachedWindows: UsageWindows?
+
   init(config: Config) {
     self.config = config
   }
 
+  /// Adopts new settings, refreshing **only** if they change what we fetch.
+  ///
+  /// Cosmetic changes arrive constantly — every drag writes the window origin,
+  /// every ring click writes the pinned metric — and none of them justify a
+  /// network call.
   func updateConfig(_ config: Config) {
-    let intervalChanged = config.refreshInterval != self.config.refreshInterval
+    let previous = self.config
     self.config = config
-    if intervalChanged { start() }
-    Task { await refresh() }
+
+    if config.refreshInterval != previous.refreshInterval {
+      start()  // start() performs its own refresh
+      return
+    }
+    if config.dataFingerprint != previous.dataFingerprint {
+      Task { await refresh() }
+    }
   }
 
   func start() {
@@ -81,23 +103,37 @@ final class UsageCoordinator: ObservableObject {
       next.localSourceStatus = .failed(error.localizedDescription)
     }
 
-    // Live, unless disabled or we are backing off after a 429.
+    // Live, unless disabled, throttled, or backing off after a 429.
     var windows: UsageWindows?
-    if config.useLiveAPI, !isBackingOff(now: now) {
+    if config.useLiveAPI, !isBackingOff(now: now), !isThrottled(now: now) {
       do {
         windows = try await live.fetch()
+        cachedWindows = windows
+        lastLiveFetch = now
         next.liveSourceStatus = .ok
         consecutiveLiveFailures = 0
         liveBackoffUntil = nil
       } catch {
+        lastLiveFetch = now
         next.liveSourceStatus = .failed(error.localizedDescription)
         noteLiveFailure(error: error, now: now)
       }
+    } else if config.useLiveAPI, isThrottled(now: now), let cached = cachedWindows {
+      // Too soon to ask again, but the last answer is seconds old.
+      windows = cached
+      next.liveSourceStatus = .ok
     } else if !config.useLiveAPI {
       next.liveSourceStatus = .failed("Live API disabled in settings")
     } else if let until = liveBackoffUntil {
       let secs = Int(until.timeIntervalSince(now))
-      next.liveSourceStatus = .failed("Backing off, retrying in \(max(0, secs))s")
+      // Keep showing the last real numbers while waiting. They are minutes old
+      // at worst, which beats replacing them with estimates.
+      if let cached = cachedWindows {
+        windows = cached
+        next.liveSourceStatus = .failed("Last good reading; retrying in \(max(0, secs))s")
+      } else {
+        next.liveSourceStatus = .failed("Backing off, retrying in \(max(0, secs))s")
+      }
     }
 
     // Whenever both halves are in hand, learn the real denominators so the
@@ -129,6 +165,11 @@ final class UsageCoordinator: ObservableObject {
     guard updated != calibration else { return }
     calibration = updated
     calibration.save()
+  }
+
+  private func isThrottled(now: Date) -> Bool {
+    guard let last = lastLiveFetch else { return false }
+    return now.timeIntervalSince(last) < Self.minimumLiveInterval
   }
 
   private func isBackingOff(now: Date) -> Bool {
