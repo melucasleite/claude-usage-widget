@@ -56,7 +56,9 @@ struct WidgetView: View {
         if config.showLegend { legend }
       }
     }
-    .padding(config.showBackground ? 16 : 4)
+    // Without the frosted panel there is no padding to hide behind, and the
+    // overflow-lap shadow still needs somewhere to fall.
+    .padding(config.showBackground ? 16 : max(8, config.ringThickness * 0.4))
     .background(background)
     .overlay(alignment: .topLeading) { if hovering { closeButton } }
     .overlay(alignment: .topTrailing) { if hovering && !needsToken { controls } }

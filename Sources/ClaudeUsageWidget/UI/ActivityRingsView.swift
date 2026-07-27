@@ -24,7 +24,11 @@ struct ActivityRingsView: View {
 
   /// Fraction of the overall diameter kept clear in the middle, so the
   /// readout always has somewhere to live.
-  static let minimumHoleFraction: Double = 0.34
+  ///
+  /// 0.34 was too tight: a three-digit percentage filled it edge to edge and
+  /// grazed the innermost band. It only looked acceptable while the ring
+  /// geometry was half a stroke-width off and accidentally left extra room.
+  static let minimumHoleFraction: Double = 0.42
 
   /// Thins the bands when there are enough rings to close up the centre.
   ///
@@ -79,6 +83,7 @@ struct ActivityRingsView: View {
             thickness: t,
             progress: appeared || !animated ? ring.progress : 0
           )
+          // +t because RingView insets by t/2 on each side.
           .frame(
             width: max(t, side - inset * 2),
             height: max(t, side - inset * 2))
@@ -150,6 +155,14 @@ struct RingView: View {
         }
       }
     }
+    // A stroked Circle straddles its path: half the line width falls *outside*
+    // the frame. Without this inset the outermost band overhangs the widget by
+    // thickness/2 and gets clipped — invisible while the frosted background
+    // supplies 16pt of padding, obvious the moment it is switched off.
+    //
+    // Insetting also makes the geometry match what `ringIndex(at:)` assumes:
+    // an outer edge at exactly side/2, rather than side/2 + thickness/2.
+    .padding(thickness / 2)
   }
 
   /// The sweep must return to its starting colour, or the 360°→0° wrap shows

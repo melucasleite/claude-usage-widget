@@ -68,7 +68,9 @@ enum PreviewRenderer {
               }
               .lineLimit(1)
               .minimumScaleFactor(0.4)
-              .frame(maxWidth: size * 0.72 * ActivityRingsView.minimumHoleFraction)
+              // Same 0.82 of the hole the widget itself allows, so this image
+              // does not flatter the real layout.
+              .frame(maxWidth: size * 0.72 * ActivityRingsView.minimumHoleFraction * 0.82)
             }
           }
 
