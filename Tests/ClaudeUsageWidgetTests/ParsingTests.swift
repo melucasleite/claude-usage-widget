@@ -313,3 +313,22 @@ final class ConfigFingerprintTests: XCTestCase {
     XCTAssertNotEqual(budgeted.dataFingerprint, base.dataFingerprint)
   }
 }
+
+/// Tokens are pasted out of a terminal, where the shell wraps them.
+final class TokenSanitisingTests: XCTestCase {
+
+  func testStripsInternalNewlinesNotJustTheEnds() {
+    // What a wrapped terminal copy actually looks like.
+    let wrapped = "  sk-ant-oat01-AAAA\nBBBB\r\n  CCCC \t DDDD\n"
+    XCTAssertEqual(CredentialStore.sanitizeToken(wrapped), "sk-ant-oat01-AAAABBBBCCCCDDDD")
+  }
+
+  func testLeavesACleanTokenAlone() {
+    let clean = "sk-ant-oat01-abcdef123456"
+    XCTAssertEqual(CredentialStore.sanitizeToken(clean), clean)
+  }
+
+  func testWhitespaceOnlyBecomesEmpty() {
+    XCTAssertTrue(CredentialStore.sanitizeToken(" \n\t \r\n ").isEmpty)
+  }
+}

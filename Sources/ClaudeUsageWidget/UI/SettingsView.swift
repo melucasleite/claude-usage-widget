@@ -139,19 +139,34 @@ struct SettingsView: View {
             Task { await coordinator.refresh(force: true) }
           }
         } else {
-          SecureField("Paste token from `claude setup-token`", text: $tokenEntry)
-            .textFieldStyle(.roundedBorder)
+          HStack(spacing: 8) {
+            SecureField("Paste token from `claude setup-token`", text: $tokenEntry)
+              .textFieldStyle(.roundedBorder)
+            // An explicit button, so this never depends on ⌘V routing
+            // correctly through a menu this app barely has.
+            Button("Paste") {
+              let clip = NSPasteboard.general.string(forType: .string) ?? ""
+              tokenEntry = CredentialStore.sanitizeToken(clip)
+              tokenMessage =
+                tokenEntry.isEmpty
+                ? "Clipboard is empty." : "Pasted \(tokenEntry.count) characters."
+            }
+          }
           Button("Save to Keychain") {
+            let cleaned = CredentialStore.sanitizeToken(tokenEntry)
+            let stripped = tokenEntry.count - cleaned.count
             if CredentialStore.storeLongLivedToken(tokenEntry) {
               hasStoredToken = true
               tokenEntry = ""
-              tokenMessage = "Saved."
+              tokenMessage =
+                stripped > 0
+                ? "Saved (removed \(stripped) whitespace character(s))." : "Saved."
               Task { await coordinator.refresh(force: true) }
             } else {
               tokenMessage = "Could not save — is the token empty?"
             }
           }
-          .disabled(tokenEntry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          .disabled(CredentialStore.sanitizeToken(tokenEntry).isEmpty)
         }
         if let tokenMessage {
           Text(tokenMessage).font(.caption).foregroundStyle(.secondary)

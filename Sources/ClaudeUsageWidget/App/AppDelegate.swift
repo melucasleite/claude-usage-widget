@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     // Menu-bar/utility app: no Dock icon, no main menu window.
     NSApp.setActivationPolicy(.accessory)
+    installMainMenu()
 
     coordinator = UsageCoordinator(config: configStore.config)
 
@@ -66,6 +67,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     panel?.orderFrontRegardless()
     return true
   }
+
+  /// Installs a minimal main menu, purely so text editing shortcuts work.
+  ///
+  /// An `LSUIElement` app shows no menu bar, which makes it tempting to skip
+  /// this entirely — but macOS routes ⌘C/⌘V/⌘X/⌘A through the *key
+  /// equivalents of menu items*. With no main menu there is nothing to route
+  /// to, and every text field in the app silently refuses to paste. That is
+  /// exactly as baffling to hit as it sounds.
+  ///
+  /// The items carry no target: they dispatch through the responder chain to
+  /// whichever control has focus, which is what makes them work everywhere.
+  private func installMainMenu() {
+    let main = NSMenu()
+
+    let appItem = NSMenuItem()
+    let appMenu = NSMenu()
+    appMenu.addItem(
+      withTitle: "Settings…", action: #selector(openSettingsMenuAction), keyEquivalent: ","
+    )
+    .target = self
+    appMenu.addItem(.separator())
+    appMenu.addItem(
+      withTitle: "Quit Claude Usage Widget", action: #selector(NSApplication.terminate(_:)),
+      keyEquivalent: "q")
+    appItem.submenu = appMenu
+    main.addItem(appItem)
+
+    let editItem = NSMenuItem()
+    let edit = NSMenu(title: "Edit")
+    edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+    edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+    edit.addItem(.separator())
+    edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+    edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+    edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+    edit.addItem(
+      withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+    editItem.submenu = edit
+    main.addItem(editItem)
+
+    NSApp.mainMenu = main
+  }
+
+  @objc private func openSettingsMenuAction() { openSettings() }
 
   // MARK: - Windows
 

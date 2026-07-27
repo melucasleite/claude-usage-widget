@@ -56,10 +56,21 @@ enum CredentialStore {
 
   static var hasLongLivedToken: Bool { loadLongLivedToken() != nil }
 
+  /// Removes every whitespace character, not merely the ends.
+  ///
+  /// Tokens arrive by copy-paste out of a terminal, where the shell has often
+  /// wrapped them across lines. Trimming the ends leaves those internal
+  /// newlines in place and produces a token that looks right, saves fine, and
+  /// then fails authentication for no visible reason. No OAuth token contains
+  /// legitimate whitespace, so stripping all of it is safe.
+  static func sanitizeToken(_ raw: String) -> String {
+    raw.components(separatedBy: .whitespacesAndNewlines).joined()
+  }
+
   /// Stores (or replaces) the long-lived token.
   @discardableResult
   static func storeLongLivedToken(_ token: String) -> Bool {
-    let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmed = sanitizeToken(token)
     guard !trimmed.isEmpty else { return false }
     let data = Data(trimmed.utf8)
 
@@ -120,8 +131,7 @@ enum CredentialStore {
     guard let token = ProcessInfo.processInfo.environment["CLAUDE_CODE_OAUTH_TOKEN"],
       !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     else { return nil }
-    return OAuthCredentials(
-      accessToken: token.trimmingCharacters(in: .whitespacesAndNewlines), expiresAt: nil)
+    return OAuthCredentials(accessToken: sanitizeToken(token), expiresAt: nil)
   }
 
   /// Account is the current username.
