@@ -6,6 +6,7 @@
 #   ./Scripts/release.sh 1.0.0 --app path/to/ClaudeUsageWidget.app   # reuse a build
 #   ./Scripts/release.sh 1.0.0 --no-publish                          # package only
 #   ./Scripts/release.sh 1.0.0 --draft                               # draft release
+#   ./Scripts/release.sh 1.0.0 --no-commit                           # bump but don't commit
 #
 # Notarization needs credentials stored once, which is yours to do — it wants
 # an app-specific password from appleid.apple.com:
@@ -29,6 +30,7 @@ APP_OVERRIDE=""
 PUBLISH=1
 DRAFT=0
 SKIP_NOTARIZE=0
+COMMIT_BUMP=1
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -36,6 +38,7 @@ while [[ $# -gt 0 ]]; do
     --no-publish) PUBLISH=0; shift ;;
     --draft) DRAFT=1; shift ;;
     --skip-notarize) SKIP_NOTARIZE=1; shift ;;
+    --no-commit) COMMIT_BUMP=0; shift ;;
     -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
     -*) echo "unknown flag: $1" >&2; exit 2 ;;
     *) VERSION="$1"; shift ;;
@@ -75,7 +78,41 @@ fi
 echo "    $IDENTITY"
 
 # ---------------------------------------------------------------------------
-# 2. Build, or adopt an existing app bundle.
+# 2. Stamp the version into the sources.
+#
+# This used to be missing, and the omission was invisible: the tag, the
+# filenames and the release page all said one version while the bundle's
+# Info.plist still said whatever was last committed. v1.0.6 shipped reporting
+# 1.0.2 in its own About box. A mislabelled binary is worse than an unlabelled
+# one — it makes every future bug report point at the wrong code.
+#
+# Skipped when adopting a pre-built bundle with --app, since its version is
+# already baked in and gets verified below either way.
+# ---------------------------------------------------------------------------
+if [[ -z "$APP_OVERRIDE" ]]; then
+  step "Stamping version $VERSION"
+
+  plutil -replace CFBundleShortVersionString -string "$VERSION" Resources/Info.plist
+  sed -i '' "s/^    MARKETING_VERSION: .*/    MARKETING_VERSION: \"$VERSION\"/" project.yml
+
+  # Monotonic build number, which the App Store cares about and humans do not.
+  CURRENT_BUILD="$(sed -n 's/^    CURRENT_PROJECT_VERSION: "\(.*\)"/\1/p' project.yml)"
+  NEXT_BUILD=$(( ${CURRENT_BUILD:-0} + 1 ))
+  sed -i '' "s/^    CURRENT_PROJECT_VERSION: .*/    CURRENT_PROJECT_VERSION: \"$NEXT_BUILD\"/" project.yml
+  echo "    marketing $VERSION · build $NEXT_BUILD"
+
+  if [[ "$COMMIT_BUMP" == "1" ]] && git diff --quiet --exit-code -- project.yml Resources/Info.plist; then
+    echo "    (already at this version, nothing to commit)"
+  elif [[ "$COMMIT_BUMP" == "1" ]]; then
+    git add project.yml Resources/Info.plist
+    git commit -q -m "Release $VERSION" -- project.yml Resources/Info.plist \
+      && echo "    committed the bump" \
+      || echo "    (could not commit; continuing)"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# 3. Build, or adopt an existing app bundle.
 # ---------------------------------------------------------------------------
 if [[ -n "$APP_OVERRIDE" ]]; then
   step "Using existing bundle"
@@ -89,7 +126,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 3. Verify the signature before spending time on Apple's queue.
+# 4. Verify the signature before spending time on Apple's queue.
 #
 # Notarization rejects anything without the hardened runtime, and it is much
 # cheaper to find that out here than fifteen minutes into a submission.
@@ -112,8 +149,26 @@ codesign --verify --strict --deep "$APP" 2>/dev/null \
 
 echo "    Developer ID · hardened runtime · secure timestamp · verifies"
 
+# The bundle must actually claim the version we are about to publish. This is
+# the backstop that would have caught v1.0.6 shipping as 1.0.2.
+BUNDLE_VERSION="$(
+  plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist" 2>/dev/null || echo "?"
+)"
+if [[ "$BUNDLE_VERSION" != "$VERSION" ]]; then
+  fail "bundle reports version '$BUNDLE_VERSION' but this release is '$VERSION'.
+  Publishing that would mislabel the binary. Rebuild without --app, or fix
+  Resources/Info.plist."
+fi
+echo "    bundle reports $BUNDLE_VERSION"
+
+# Tag the commit that actually produced this build, so a bug report can be
+# traced back to source.
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  echo "    built from $(git rev-parse --short HEAD)$(git diff --quiet || echo ' (dirty)')"
+fi
+
 # ---------------------------------------------------------------------------
-# 4. Notarize, unless the bundle already carries a ticket.
+# 5. Notarize, unless the bundle already carries a ticket.
 # ---------------------------------------------------------------------------
 if xcrun stapler validate "$APP" >/dev/null 2>&1; then
   step "Notarization"
@@ -148,7 +203,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 5. Prove it the way the recipient's Mac will see it.
+# 6. Prove it the way the recipient's Mac will see it.
 # ---------------------------------------------------------------------------
 step "Gatekeeper"
 ASSESS="$(spctl -a -vvv -t install "$APP" 2>&1 || true)"
@@ -168,7 +223,7 @@ rm -rf "$(dirname "$QT")"
 echo "    passes with a download quarantine flag too"
 
 # ---------------------------------------------------------------------------
-# 6. Package.
+# 7. Package.
 # ---------------------------------------------------------------------------
 step "Packaging"
 mkdir -p dist
@@ -214,7 +269,7 @@ fi
 echo "    $(du -h "$DMG" | cut -f1)  $DMG"
 
 # ---------------------------------------------------------------------------
-# 7. Publish.
+# 8. Publish.
 # ---------------------------------------------------------------------------
 if [[ "$PUBLISH" == "0" ]]; then
   step "Done (not published)"
