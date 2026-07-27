@@ -177,7 +177,12 @@ rm -f "$ZIP"
 # ditto, not `zip`: it preserves the bundle's symlinks and extended attributes,
 # and a mangled bundle fails signature verification on arrival.
 ditto -c -k --keepParent "$APP" "$ZIP"
-shasum -a 256 "$ZIP" | tee "${ZIP}.sha256"
+# Record the checksum against the bare filename, not the path. `shasum -c`
+# resolves names relative to the working directory, so a stored "dist/..."
+# prefix makes verification fail for everyone who downloads the file into a
+# directory that is not a sibling of ours — i.e. everyone.
+( cd "$(dirname "$ZIP")" && shasum -a 256 "$(basename "$ZIP")" > "$(basename "$ZIP").sha256" )
+cat "${ZIP}.sha256"
 echo "    $(du -h "$ZIP" | cut -f1)  $ZIP"
 
 # ---------------------------------------------------------------------------
