@@ -1,11 +1,35 @@
-# Claude Usage Widget
+<p align="center">
+  <img src="docs/icon.png" alt="Claude Usage Widget icon" width="128">
+</p>
 
-A small always-on-top macOS widget that shows your Claude Code usage as
-concentric Apple-Watch-style activity rings.
+<h1 align="center">Claude Usage Widget</h1>
+
+<p align="center">
+  A small always-on-top macOS widget that shows your Claude Code usage as
+  concentric Apple-Watch-style activity rings.
+</p>
+
+<p align="center">
+  <a href="https://github.com/melucasleite/claude-usage-widget/releases/latest">
+    <img src="https://img.shields.io/github/v/release/melucasleite/claude-usage-widget?label=download&style=for-the-badge&color=FF375F" alt="Download latest release">
+  </a>
+  <img src="https://img.shields.io/badge/macOS-14%2B-333?style=for-the-badge" alt="macOS 14+">
+  <img src="https://img.shields.io/badge/signed-notarized-A0F624?style=for-the-badge&labelColor=333" alt="Signed and notarized">
+</p>
 
 <p align="center">
   <img src="docs/rings.png" alt="Three concentric usage rings: 5-hour, weekly and Fable" width="300">
 </p>
+
+## Download
+
+**[⬇ Download the latest release](https://github.com/melucasleite/claude-usage-widget/releases/latest)**
+
+Unzip and drag `ClaudeUsageWidget.app` to Applications. It is signed and
+notarized, so it opens normally — no right-click ▸ Open, no warning dialog.
+
+Requires macOS 14+ and Claude Code signed in on your own machine: the widget
+reads *your* credentials and *your* transcripts, never anyone else's.
 
 Each ring is one limit:
 
