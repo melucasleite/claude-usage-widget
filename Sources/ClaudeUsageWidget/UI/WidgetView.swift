@@ -210,7 +210,7 @@ struct WidgetView: View {
   private var controls: some View {
     HStack(spacing: 6) {
       Button {
-        Task { await coordinator.refresh() }
+        Task { await coordinator.refresh(force: true) }
       } label: {
         Image(systemName: "arrow.clockwise")
       }

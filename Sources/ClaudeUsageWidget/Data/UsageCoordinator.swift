@@ -1,4 +1,5 @@
 import Combine
+import CryptoKit
 import Foundation
 
 /// Owns the refresh loop and decides, per ring, which source to believe.
@@ -41,6 +42,9 @@ final class UsageCoordinator: ObservableObject {
   /// Last good response, replayed while throttled so the rings stay live
   /// rather than falling back to estimates for the sake of a few seconds.
   private var cachedWindows: UsageWindows?
+  /// Why the live source last failed, kept so the status line can say so
+  /// instead of showing only a countdown.
+  private var lastFailureReason: String?
 
   init(config: Config) {
     self.config = config
@@ -84,7 +88,10 @@ final class UsageCoordinator: ObservableObject {
 
   // MARK: - Refresh
 
-  func refresh() async {
+  /// - Parameter force: bypass the throttle and any active backoff. Set when a
+  ///   human asked — a person clicking Refresh has more context than our timer,
+  ///   and making them watch a countdown they cannot skip is hostile.
+  func refresh(force: Bool = false) async {
     guard !isRefreshing else { return }
     isRefreshing = true
     defer { isRefreshing = false }
@@ -103,9 +110,16 @@ final class UsageCoordinator: ObservableObject {
       next.localSourceStatus = .failed(error.localizedDescription)
     }
 
-    // Live, unless disabled, throttled, or backing off after a 429.
+    // A new token means the reason for backing off is gone.
+    if !force, isBackingOff(now: now), credentialChangedSinceFailure() {
+      liveBackoffUntil = nil
+      consecutiveLiveFailures = 0
+      failedTokenFingerprint = nil
+    }
+
+    // Live, unless disabled, throttled, or backing off.
     var windows: UsageWindows?
-    if config.useLiveAPI, !isBackingOff(now: now), !isThrottled(now: now) {
+    if config.useLiveAPI, force || (!isBackingOff(now: now) && !isThrottled(now: now)) {
       do {
         windows = try await live.fetch()
         cachedWindows = windows
@@ -113,9 +127,12 @@ final class UsageCoordinator: ObservableObject {
         next.liveSourceStatus = .ok
         consecutiveLiveFailures = 0
         liveBackoffUntil = nil
+        failedTokenFingerprint = nil
       } catch {
         lastLiveFetch = now
         next.liveSourceStatus = .failed(error.localizedDescription)
+        lastFailureReason = error.localizedDescription
+        failedTokenFingerprint = currentTokenFingerprint()
         noteLiveFailure(error: error, now: now)
       }
     } else if config.useLiveAPI, isThrottled(now: now), let cached = cachedWindows {
@@ -125,14 +142,15 @@ final class UsageCoordinator: ObservableObject {
     } else if !config.useLiveAPI {
       next.liveSourceStatus = .failed("Live API disabled in settings")
     } else if let until = liveBackoffUntil {
-      let secs = Int(until.timeIntervalSince(now))
-      // Keep showing the last real numbers while waiting. They are minutes old
-      // at worst, which beats replacing them with estimates.
+      let secs = max(0, Int(until.timeIntervalSince(now)))
+      // Lead with *why*. A countdown alone tells you nothing you can act on —
+      // and when the cause is an expired token, waiting is not the fix.
+      let reason = lastFailureReason ?? "Live source unavailable"
       if let cached = cachedWindows {
         windows = cached
-        next.liveSourceStatus = .failed("Last good reading; retrying in \(max(0, secs))s")
+        next.liveSourceStatus = .failed("\(reason) · showing last reading · retry \(secs)s")
       } else {
-        next.liveSourceStatus = .failed("Backing off, retrying in \(max(0, secs))s")
+        next.liveSourceStatus = .failed("\(reason) · retry \(secs)s")
       }
     }
 
@@ -177,18 +195,53 @@ final class UsageCoordinator: ObservableObject {
     return now < until
   }
 
+  /// Chooses how long to wait, based on *why* we failed.
+  ///
+  /// Lumping every failure into one exponential curve was wrong in both
+  /// directions. Rate limits come with a server-supplied delay and should not
+  /// also inflate a counter — repeated 429s used to push the exponential term
+  /// up until an unrelated error produced an eight-minute silence. And an
+  /// expired token is not a transient fault at all: backing off further does
+  /// nothing, because the fix is a human running `claude`, and the moment they
+  /// do we want to notice immediately.
   private func noteLiveFailure(error: Error, now: Date) {
-    consecutiveLiveFailures += 1
-    // Honour Retry-After when the server gives one; otherwise exponential
-    // backoff capped at 15 minutes.
-    if case OAuthUsageProvider.ProviderError.rateLimited(let retryAfter) = error,
-      let retryAfter
-    {
-      liveBackoffUntil = now.addingTimeInterval(retryAfter)
-      return
+    switch error {
+    case OAuthUsageProvider.ProviderError.rateLimited(let retryAfter):
+      // Server-directed. Obey it; do not escalate.
+      liveBackoffUntil = now.addingTimeInterval(retryAfter ?? 60)
+
+    case OAuthUsageProvider.ProviderError.unauthorized:
+      // Retrying cannot help, but the credential can change underneath us at
+      // any moment. Keep checking at a steady, cheap interval rather than
+      // disappearing for minutes.
+      liveBackoffUntil = now.addingTimeInterval(45)
+
+    default:
+      consecutiveLiveFailures += 1
+      let delay = min(300, pow(2, Double(consecutiveLiveFailures)) * 15)
+      liveBackoffUntil = now.addingTimeInterval(delay)
     }
-    let delay = min(900, pow(2, Double(consecutiveLiveFailures)) * 15)
-    liveBackoffUntil = now.addingTimeInterval(delay)
+  }
+
+  /// Fingerprint of the credential that last failed, so a new token is noticed
+  /// the moment it appears rather than at the end of a backoff.
+  ///
+  /// Stores a SHA-256 of the token, never the token: enough to tell "changed"
+  /// from "same", useless to anyone who reads it.
+  private var failedTokenFingerprint: String?
+
+  private func currentTokenFingerprint() -> String? {
+    guard let creds = try? CredentialStore.load() else { return nil }
+    return SHA256.hash(data: Data(creds.accessToken.utf8))
+      .map { String(format: "%02x", $0) }.joined()
+  }
+
+  /// True when the stored credential differs from the one that failed — which
+  /// means the user has just run `claude` and we should stop waiting.
+  private func credentialChangedSinceFailure() -> Bool {
+    guard let failed = failedTokenFingerprint else { return false }
+    guard let current = currentTokenFingerprint() else { return false }
+    return current != failed
   }
 
   // MARK: - Ring assembly

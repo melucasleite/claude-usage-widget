@@ -189,6 +189,6 @@ final class StatusItemController {
 
   @objc private func toggleWidget() { onToggleWidget?() }
   @objc private func openSettings() { onOpenSettings?() }
-  @objc private func refresh() { Task { await coordinator.refresh() } }
+  @objc private func refresh() { Task { await coordinator.refresh(force: true) } }
   @objc private func quit() { NSApp.terminate(nil) }
 }
