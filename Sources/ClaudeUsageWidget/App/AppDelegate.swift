@@ -73,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationWillTerminate(_ notification: Notification) {
+    configStore.flush()
     coordinator.stop()
     configStore.config.save()
   }

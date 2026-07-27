@@ -125,11 +125,35 @@ final class ConfigStore: ObservableObject {
   @Published var config: Config {
     didSet {
       guard config != oldValue else { return }
-      config.save()
+      scheduleSave()
     }
   }
 
+  private var saveWork: DispatchWorkItem?
+
   init(config: Config = .load()) {
     self.config = config
+  }
+
+  /// Coalesces writes.
+  ///
+  /// Some settings change continuously — dragging the resize handle mutates
+  /// `widgetSize` every frame — and writing the file each time is hundreds of
+  /// disk writes for one gesture. Publishing stays immediate so the UI tracks
+  /// the drag; only the write waits.
+  private func scheduleSave() {
+    saveWork?.cancel()
+    let config = self.config
+    let work = DispatchWorkItem { config.save() }
+    saveWork = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+  }
+
+  /// Flushes any pending write. Called on quit, so a change made a moment
+  /// before closing is not lost to the debounce.
+  func flush() {
+    saveWork?.cancel()
+    saveWork = nil
+    config.save()
   }
 }

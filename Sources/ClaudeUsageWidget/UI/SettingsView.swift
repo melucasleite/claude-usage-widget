@@ -40,16 +40,14 @@ struct SettingsView: View {
         Toggle("Legend", isOn: config.showLegend)
       }
       Section {
-        LabeledContent("Size") {
-          Slider(value: config.widgetSize, in: 110...320, step: 2)
-          Text("\(Int(configStore.config.widgetSize)) pt")
-            .monospacedDigit().foregroundStyle(.secondary)
-        }
         LabeledContent("Opacity") {
           Slider(value: config.opacity, in: 0.2...1.0)
           Text("\(Int(configStore.config.opacity * 100))%")
             .monospacedDigit().foregroundStyle(.secondary)
         }
+      } footer: {
+        Text("Resize the widget by dragging the handle in its bottom-right corner.")
+          .font(.caption).foregroundStyle(.secondary)
       }
     }
     .formStyle(.grouped)

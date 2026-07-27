@@ -20,6 +20,8 @@ struct WidgetView: View {
   /// Longest remaining time seen during the current wait, so the draining arc
   /// has a stable denominator.
   @State private var longestWait: Double = 1
+  /// Widget size when the current resize drag began.
+  @State private var sizeAtDragStart: Double?
 
   private var config: Config { configStore.config }
   private var rings: [RingDatum] { coordinator.snapshot.ordered(by: config.visibleMetrics) }
@@ -77,6 +79,7 @@ struct WidgetView: View {
     .padding(config.showBackground ? 16 : max(8, config.ringThickness * 0.4))
     .background(background)
     .overlay(alignment: .topLeading) { if hovering { closeButton } }
+    .overlay(alignment: .bottomTrailing) { if hovering { resizeHandle } }
     .overlay(alignment: .topTrailing) {
       if hovering && !needsToken && waitingUntil == nil { controls }
     }
@@ -246,6 +249,41 @@ struct WidgetView: View {
     .buttonStyle(.plain)
     .help("Quit Claude Usage Widget")
     .padding(6)
+  }
+
+  /// Drag to resize, from the widget rather than a slider in Settings.
+  ///
+  /// A size control belongs on the thing being sized: you are choosing how big
+  /// this looks on your screen, which is a question you answer by looking at
+  /// it, not by nudging a number in another window and switching back.
+  private var resizeHandle: some View {
+    Image(systemName: "arrow.down.right.and.arrow.up.left")
+      .font(.system(size: 9, weight: .bold))
+      .rotationEffect(.degrees(90))
+      .foregroundStyle(.secondary)
+      .frame(width: 18, height: 18)
+      .background(.ultraThinMaterial, in: Circle())
+      .padding(6)
+      .onHover { inside in
+        // The pointer says what the handle does before it is grabbed.
+        if inside { NSCursor.crosshair.push() } else { NSCursor.pop() }
+      }
+      .gesture(
+        DragGesture(minimumDistance: 1)
+          .onChanged { value in
+            let start = sizeAtDragStart ?? config.widgetSize
+            if sizeAtDragStart == nil { sizeAtDragStart = start }
+            // Both axes drive it, so a diagonal drag feels natural and either
+            // one alone still works.
+            let delta = (value.translation.width + value.translation.height) / 2
+            configStore.config.widgetSize = min(320, max(110, start + delta * 2))
+          }
+          .onEnded { _ in
+            sizeAtDragStart = nil
+            configStore.flush()
+          }
+      )
+      .help("Drag to resize")
   }
 
   private var controls: some View {
