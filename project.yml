@@ -47,6 +47,10 @@ targets:
     platform: macOS
     sources:
       - path: Sources/ClaudeUsageWidget
+      # Optional: created by Scripts/make-icon.sh. `optional: true` keeps the
+      # project generating cleanly before an icon exists.
+      - path: Resources/AppIcon.icns
+        optional: true
     # Generated, NOT the static Resources/Info.plist. Xcode wants build-setting
     # variables here ($(EXECUTABLE_NAME) and friends); Scripts/build-app.sh
     # copies its plist verbatim and needs literal values. Sharing one file
@@ -54,6 +58,7 @@ targets:
     info:
       path: Resources/Generated-Info.plist
       properties:
+        CFBundleIconFile: AppIcon
         CFBundleName: Claude Usage Widget
         CFBundleDisplayName: Claude Usage Widget
         CFBundleShortVersionString: $(MARKETING_VERSION)

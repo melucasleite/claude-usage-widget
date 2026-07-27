@@ -353,6 +353,31 @@ round trip on your friend's machine.
 Hardened runtime is enabled in `project.yml` (notarization rejects builds
 without it) and the sandbox is explicitly off, for the reasons above.
 
+### App icon
+
+```bash
+./Scripts/make-icon.sh ~/Downloads/your-icon.png
+```
+
+Generates `Resources/AppIcon.icns`. Both build paths pick it up automatically —
+no online generator, and no uploading your artwork anywhere.
+
+Unlike iOS, where Xcode slices a single 1024px image for you, a macOS `.icns`
+wants the full set: 16/32/128/256/512 at both scale factors, ten files. `sips`
+and `iconutil` ship with macOS and do all of it. A non-square source is padded
+rather than cropped, on the grounds that silently eating part of someone's
+artwork is worse than a bit of transparency.
+
+For the macOS 26+ layered look — automatic light, dark, clear and tinted
+variants — use **Icon Composer**, bundled inside Xcode:
+
+```bash
+open "/Applications/Xcode.app/Contents/Applications/Icon Composer.app"
+```
+
+That exports a `.icon` rather than a `.icns`, and is a design exercise rather
+than a packaging step. A plain `.icns` works fine everywhere.
+
 ### Cutting a release
 
 ```bash

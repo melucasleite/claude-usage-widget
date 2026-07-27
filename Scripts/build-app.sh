@@ -91,6 +91,13 @@ mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources"
 cp "$BIN" "${APP_DIR}/Contents/MacOS/${APP_NAME}"
 cp Resources/Info.plist "${APP_DIR}/Contents/Info.plist"
 
+# Icon, if one has been generated. See Scripts/make-icon.sh.
+if [[ -f Resources/AppIcon.icns ]]; then
+  cp Resources/AppIcon.icns "${APP_DIR}/Contents/Resources/AppIcon.icns"
+else
+  echo "   (no Resources/AppIcon.icns — run ./Scripts/make-icon.sh <png> to add one)"
+fi
+
 # --- signing --------------------------------------------------------------
 #
 # This matters more than it looks. Keychain access grants ("Always Allow") are
