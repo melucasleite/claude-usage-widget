@@ -85,7 +85,15 @@ enum Diagnostics {
     // Probed in the same order `CredentialStore.load()` uses: the tool that
     // is already on the item's ACL first, so the common path never prompts.
     var creds: OAuthCredentials?
-    if let viaTool = try? CredentialStore.loadViaSecurityTool() {
+    if let longLived = CredentialStore.loadLongLivedToken() {
+      creds = longLived
+      print("    ✓ using the long-lived token stored by this app (no expiry)")
+    }
+    if creds == nil, let fromEnv = CredentialStore.loadFromEnvironment() {
+      creds = fromEnv
+      print("    ✓ using CLAUDE_CODE_OAUTH_TOKEN from the environment")
+    }
+    if creds == nil, let viaTool = try? CredentialStore.loadViaSecurityTool() {
       creds = viaTool
       print("    ✓ loaded via /usr/bin/security (no prompt path)")
     }

@@ -251,6 +251,28 @@ and per-model windows. An API key authenticates a separate pay-as-you-go
 billing path; it is not accepted by this OAuth-scoped endpoint, and API console
 spend has no relationship to your plan's quotas.
 
+### The durable fix: a long-lived token
+
+Claude Code's stored token expires every few hours, and the desktop app does
+not always write refreshes back to the Keychain — so the widget periodically
+loses access through no fault of its own. If that keeps happening:
+
+```bash
+claude setup-token
+```
+
+Paste the result into **Settings ▸ Data ▸ Long-lived token**. It goes into a
+Keychain item this app creates, which means reading it never prompts, and it
+is never written to config or logs.
+
+`CLAUDE_CODE_OAUTH_TOKEN` is also honoured, but only when the app is launched
+from a shell — opening it from Finder inherits no environment, which is why
+pasting it into Settings exists at all.
+
+Credential resolution order: this app's long-lived token, then
+`CLAUDE_CODE_OAUTH_TOKEN`, then Claude Code's own Keychain item via
+`/usr/bin/security`, then `~/.claude/.credentials.json`, then the Keychain API.
+
 ### If the widget shows no live data
 
 The most common cause is a stale Keychain token. Claude Code refreshes tokens

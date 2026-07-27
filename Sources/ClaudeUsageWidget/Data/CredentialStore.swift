@@ -8,8 +8,11 @@ import Security
 /// This type is the *only* place in the app that touches a secret, and it is
 /// deliberately small so it can be audited at a glance.
 ///
-/// - The token is **read** from the macOS Keychain (or `~/.claude/.credentials.json`
-///   if you are on a setup that stores it there). It is never written anywhere.
+/// - Claude Code's own token is **only ever read**, never written or copied.
+/// - The one exception is deliberate and user-initiated: a long-lived token
+///   from `claude setup-token`, which you paste into Settings. That is written
+///   — to a Keychain item this app creates, never to config.json, never to
+///   disk in the clear, and never anywhere this repository can reach.
 /// - The token is held in memory only for the lifetime of a request, and is
 ///   never included in log output, error messages, crash reports, or the
 ///   config file.
@@ -34,6 +37,92 @@ enum CredentialStore {
   /// Hardcoding one spelling therefore finds nothing on a perfectly healthy
   /// machine, so `discoverServiceNames()` matches the *pattern* instead.
   static let keychainService = "Claude Code-credentials"
+
+  // MARK: - Long-lived token
+  //
+  // `claude setup-token` issues a token that does not expire every few hours,
+  // which is the durable answer to a widget that keeps going dark. Claude Code
+  // itself reads it from CLAUDE_CODE_OAUTH_TOKEN — but an app launched from
+  // Finder inherits no shell environment, so that variable alone never reaches
+  // us. We therefore keep our own copy.
+  //
+  // It lives in a Keychain item *this app creates*, which matters twice over:
+  // an app always has access to its own items, so there is no permission
+  // prompt, ever; and it is never written to config.json or anywhere else on
+  // disk in the clear.
+
+  static let ownKeychainService = "us.lucasleite.ClaudeUsageWidget"
+  static let ownKeychainAccount = "long-lived-oauth-token"
+
+  static var hasLongLivedToken: Bool { loadLongLivedToken() != nil }
+
+  /// Stores (or replaces) the long-lived token.
+  @discardableResult
+  static func storeLongLivedToken(_ token: String) -> Bool {
+    let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return false }
+    let data = Data(trimmed.utf8)
+
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: ownKeychainService,
+      kSecAttrAccount as String: ownKeychainAccount,
+    ]
+    // Update in place if present, otherwise add.
+    if SecItemCopyMatching(
+      query.merging([kSecReturnData as String: false]) { a, _ in a } as CFDictionary, nil)
+      == errSecSuccess
+    {
+      return SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        == errSecSuccess
+    }
+    var add = query
+    add[kSecValueData as String] = data
+    // Device-only and after-first-unlock: no iCloud sync, no access while the
+    // machine is locked.
+    add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+    add[kSecAttrLabel as String] = "Claude Usage Widget — long-lived token"
+    return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
+  }
+
+  static func loadLongLivedToken() -> OAuthCredentials? {
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: ownKeychainService,
+      kSecAttrAccount as String: ownKeychainAccount,
+      kSecReturnData as String: true,
+      kSecMatchLimit as String: kSecMatchLimitOne,
+    ]
+    var item: CFTypeRef?
+    guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+      let data = item as? Data,
+      let token = String(data: data, encoding: .utf8),
+      !token.isEmpty
+    else { return nil }
+    // Long-lived by definition: no expiry to advertise.
+    return OAuthCredentials(accessToken: token, expiresAt: nil)
+  }
+
+  @discardableResult
+  static func deleteLongLivedToken() -> Bool {
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: ownKeychainService,
+      kSecAttrAccount as String: ownKeychainAccount,
+    ]
+    let status = SecItemDelete(query as CFDictionary)
+    return status == errSecSuccess || status == errSecItemNotFound
+  }
+
+  /// Long-lived token supplied through the environment. Only reaches us when
+  /// the app is launched from a shell, which is why it is not the whole story.
+  static func loadFromEnvironment() -> OAuthCredentials? {
+    guard let token = ProcessInfo.processInfo.environment["CLAUDE_CODE_OAUTH_TOKEN"],
+      !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { return nil }
+    return OAuthCredentials(
+      accessToken: token.trimmingCharacters(in: .whitespacesAndNewlines), expiresAt: nil)
+  }
 
   /// Account is the current username.
   static var keychainAccount: String {
@@ -133,6 +222,10 @@ enum CredentialStore {
   /// prompt on every launch before falling back to the path that would have
   /// worked silently.
   static func load() throws -> OAuthCredentials {
+    // A long-lived token first: it is ours, it does not expire every few
+    // hours, and reading it never prompts.
+    if let longLived = loadLongLivedToken() { return longLived }
+    if let fromEnv = loadFromEnvironment() { return fromEnv }
     if let viaTool = try? loadViaSecurityTool() { return viaTool }
     if let fromFile = try? loadFromFile() { return fromFile }
     if let fromKeychain = try? loadFromKeychain() { return fromKeychain }

@@ -4,6 +4,10 @@ struct SettingsView: View {
   @ObservedObject var configStore: ConfigStore
   @ObservedObject var coordinator: UsageCoordinator
 
+  @State private var tokenEntry: String = ""
+  @State private var hasStoredToken = CredentialStore.hasLongLivedToken
+  @State private var tokenMessage: String?
+
   private var config: Binding<Config> { $configStore.config }
 
   var body: some View {
@@ -117,6 +121,50 @@ struct SettingsView: View {
       } footer: {
         Text(
           "Live percentages come from the same endpoint /usage uses, authorised with the OAuth token already in your Keychain. The token is read at runtime and never stored by this app."
+        )
+        .font(.caption).foregroundStyle(.secondary)
+      }
+
+      Section {
+        if hasStoredToken {
+          LabeledContent("Status") {
+            Label("Long-lived token stored", systemImage: "checkmark.seal.fill")
+              .foregroundStyle(.green)
+          }
+          Button("Remove token", role: .destructive) {
+            CredentialStore.deleteLongLivedToken()
+            hasStoredToken = false
+            tokenEntry = ""
+            tokenMessage = "Removed. Falling back to Claude Code's own token."
+            Task { await coordinator.refresh(force: true) }
+          }
+        } else {
+          SecureField("Paste token from `claude setup-token`", text: $tokenEntry)
+            .textFieldStyle(.roundedBorder)
+          Button("Save to Keychain") {
+            if CredentialStore.storeLongLivedToken(tokenEntry) {
+              hasStoredToken = true
+              tokenEntry = ""
+              tokenMessage = "Saved."
+              Task { await coordinator.refresh(force: true) }
+            } else {
+              tokenMessage = "Could not save — is the token empty?"
+            }
+          }
+          .disabled(tokenEntry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        if let tokenMessage {
+          Text(tokenMessage).font(.caption).foregroundStyle(.secondary)
+        }
+      } header: {
+        Text("Long-lived token")
+      } footer: {
+        Text(
+          """
+          Optional, and the fix if the rings keep going dark. Claude Code's           stored token expires every few hours and is not always refreshed on           disk, so the widget loses access. Run `claude setup-token` in a           terminal and paste the result here.
+
+          It is kept in a Keychain item this app owns — so reading it never           prompts — and is never written to config or logs. Setting           CLAUDE_CODE_OAUTH_TOKEN also works, but only when the app is           launched from a shell: opening it from Finder inherits no           environment.
+          """
         )
         .font(.caption).foregroundStyle(.secondary)
       }
