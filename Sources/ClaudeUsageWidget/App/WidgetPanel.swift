@@ -17,7 +17,12 @@ final class WidgetPanel: NSPanel {
 
     super.init(
       contentRect: NSRect(x: 0, y: 0, width: 220, height: 220),
-      styleMask: [.borderless, .nonactivatingPanel],
+      // `.resizable` is what makes this feel native: AppKit runs the live
+      // resize, shows the right cursor at every edge, and tracks the pointer
+      // exactly. Driving it from a SwiftUI drag gesture on a handle meant the
+      // handle moved out from under the cursor on every frame, which is what
+      // made it judder.
+      styleMask: [.borderless, .nonactivatingPanel, .resizable],
       backing: .buffered,
       defer: false
     )
@@ -37,6 +42,10 @@ final class WidgetPanel: NSPanel {
     hosting.translatesAutoresizingMaskIntoConstraints = false
     contentView = hosting
     self.hostingView = hosting
+
+    contentMinSize = NSSize(width: 130, height: 130)
+    contentMaxSize = NSSize(width: 460, height: 620)
+    delegate = self
 
     applyConfig(configStore.config)
     restorePosition()
@@ -67,16 +76,35 @@ final class WidgetPanel: NSPanel {
     resizeToFit()
   }
 
-  /// Lets the SwiftUI content decide how big the panel should be, anchoring
-  /// the top-left so the widget grows downward rather than jumping.
+  /// Sizes the panel from settings, anchoring the top-left so it grows
+  /// downward rather than jumping.
+  ///
+  /// The size is stated explicitly rather than taken from the content's
+  /// `fittingSize`: the content now fills whatever window it is given, so it
+  /// has no intrinsic size to fit to and would collapse to its minimum.
+  ///
+  /// Skipped during a live resize — the window is the source of truth then,
+  /// and writing back to it mid-gesture is how a resize starts fighting the
+  /// pointer.
   func resizeToFit() {
-    guard let hostingView else { return }
-    let target = hostingView.fittingSize
-    guard target.width > 0, target.height > 0 else { return }
+    guard !isLiveResizing else { return }
+    let width = max(contentMinSize.width, min(contentMaxSize.width, configStore.config.widgetSize))
+    let target = NSSize(width: width, height: width + Self.legendHeight(configStore.config))
+    guard
+      abs(target.width - contentLayoutRect.width) > 0.5
+        || abs(target.height - contentLayoutRect.height) > 0.5
+    else { return }
     let topLeft = NSPoint(x: frame.minX, y: frame.maxY)
     setContentSize(target)
     setFrameTopLeftPoint(topLeft)
   }
+
+  /// Extra height the legend needs, so the rings stay square.
+  static func legendHeight(_ config: Config) -> Double {
+    config.showLegend ? Double(config.visibleMetrics.count) * 15 + 10 : 0
+  }
+
+  private var isLiveResizing = false
 
   // MARK: - Position persistence
 
@@ -128,6 +156,42 @@ final class WidgetPanel: NSPanel {
   /// Right-click anywhere on the widget for the same menu the status item has.
   override func rightMouseDown(with event: NSEvent) {
     NotificationCenter.default.post(name: .showContextMenu, object: event)
+  }
+}
+
+// MARK: - Live resize
+
+extension WidgetPanel: NSWindowDelegate {
+
+  /// Keeps the widget square (plus whatever the legend needs).
+  ///
+  /// Rings are circles; a panel that can be dragged into a rectangle only
+  /// offers ways to make it look wrong. Constraining here rather than
+  /// correcting afterwards means the window never visibly snaps back.
+  func windowWillResize(_ sender: NSWindow, to size: NSSize) -> NSSize {
+    let chrome = frame.height - contentLayoutRect.height
+    let extra = Self.legendHeight(configStore.config)
+    // Follow whichever edge moved further, so dragging the bottom or the side
+    // both work and a corner drag tracks the pointer.
+    let requested = max(size.width, size.height - extra - chrome)
+    let side = max(contentMinSize.width, min(contentMaxSize.width, requested))
+    return NSSize(width: side, height: side + extra + chrome)
+  }
+
+  func windowWillStartLiveResize(_ notification: Notification) {
+    isLiveResizing = true
+  }
+
+  func windowDidEndLiveResize(_ notification: Notification) {
+    isLiveResizing = false
+    configStore.flush()
+  }
+
+  /// The window is the source of truth for size; settings follow it.
+  func windowDidResize(_ notification: Notification) {
+    let side = contentLayoutRect.width
+    guard side > 0, abs(side - configStore.config.widgetSize) > 0.5 else { return }
+    configStore.config.widgetSize = side
   }
 }
 

@@ -20,8 +20,6 @@ struct WidgetView: View {
   /// Longest remaining time seen during the current wait, so the draining arc
   /// has a stable denominator.
   @State private var longestWait: Double = 1
-  /// Widget size when the current resize drag began.
-  @State private var sizeAtDragStart: Double?
 
   private var config: Config { configStore.config }
   private var rings: [RingDatum] { coordinator.snapshot.ordered(by: config.visibleMetrics) }
@@ -40,8 +38,7 @@ struct WidgetView: View {
 
   /// Clear space inside the innermost ring, using the same adaptive thickness
   /// the rings are drawn with so the two cannot drift apart.
-  private var innerDiameter: Double {
-    let side = config.widgetSize
+  private func innerDiameter(side: Double) -> Double {
     let t = ActivityRingsView.effectiveThickness(
       side: side, count: rings.count,
       requested: config.ringThickness, spacing: config.ringSpacing)
@@ -64,22 +61,44 @@ struct WidgetView: View {
   }
 
   var body: some View {
+    // The window is the source of truth for size; the content fills it.
+    //
+    // Driving it the other way — content sized from settings, window resized to
+    // fit — means a live resize round-trips through config on every frame, and
+    // the ring diameter and the content width differ by the padding, so each
+    // pass inflates the other. Filling the window removes both problems: AppKit
+    // resizes, SwiftUI lays out, nothing is written until the drag ends.
+    GeometryReader { geo in
+      content(side: ringSide(in: geo.size))
+        .frame(width: geo.size.width, height: geo.size.height)
+    }
+    .frame(minWidth: 110, minHeight: 110)
+  }
+
+  /// Ring diameter for the space available, after padding and the legend.
+  private func ringSide(in size: CGSize) -> Double {
+    let padding = (config.showBackground ? 16.0 : 8.0) * 2
+    let legend = config.showLegend ? Double(rings.count) * 15 + 10 : 0
+    return max(60, min(size.width - padding, size.height - padding - legend))
+  }
+
+  private func content(side: Double) -> some View {
     VStack(spacing: 10) {
       if needsToken {
-        setupPrompt
+        setupPrompt(side: side)
       } else if let waitingUntil {
-        WaitingView(until: waitingUntil, size: config.widgetSize, total: longestWait)
+        WaitingView(until: waitingUntil, size: side, total: longestWait)
       } else {
-        ringStack
-        if config.showLegend { legend }
+        ringStack(side: side)
+        if config.showLegend { legend(side: side) }
       }
     }
     // Without the frosted panel there is no padding to hide behind, and the
     // overflow-lap shadow still needs somewhere to fall.
-    .padding(config.showBackground ? 16 : max(8, config.ringThickness * 0.4))
+    .padding(config.showBackground ? 16 : 8)
     .background(background)
     .overlay(alignment: .topLeading) { if hovering { closeButton } }
-    .overlay(alignment: .bottomTrailing) { if hovering { resizeHandle } }
+    .overlay(alignment: .bottomTrailing) { if hovering { resizeHint } }
     .overlay(alignment: .topTrailing) {
       if hovering && !needsToken && waitingUntil == nil { controls }
     }
@@ -96,7 +115,7 @@ struct WidgetView: View {
   /// Shown until a token exists. Says what is missing and offers the one
   /// action that fixes it, rather than three empty rings that read as "you
   /// have used nothing".
-  private var setupPrompt: some View {
+  private func setupPrompt(side: Double) -> some View {
     VStack(spacing: 12) {
       ZStack {
         Circle()
@@ -105,10 +124,10 @@ struct WidgetView: View {
           )
           .foregroundStyle(.secondary.opacity(0.35))
         Image(systemName: "person.crop.circle.badge.questionmark")
-          .font(.system(size: config.widgetSize * 0.16, weight: .medium))
+          .font(.system(size: side * 0.16, weight: .medium))
           .foregroundStyle(Color(hex: 0xFF375F))
       }
-      .frame(width: config.widgetSize * 0.62, height: config.widgetSize * 0.62)
+      .frame(width: side * 0.62, height: side * 0.62)
 
       VStack(spacing: 3) {
         Text("Not signed in")
@@ -128,23 +147,23 @@ struct WidgetView: View {
       .buttonStyle(.borderedProminent)
       .tint(Color(hex: 0xFF375F))
     }
-    .frame(width: config.widgetSize)
+    .frame(width: side)
     .padding(.vertical, 6)
   }
 
   // MARK: Rings
 
-  private var ringStack: some View {
+  private func ringStack(side: Double) -> some View {
     ZStack {
       ActivityRingsView(
         rings: rings, thickness: config.ringThickness, spacing: config.ringSpacing)
-      if config.showCenterReadout { centerReadout }
+      if config.showCenterReadout { centerReadout(side: side) }
     }
-    .frame(width: config.widgetSize, height: config.widgetSize)
+    .frame(width: side, height: side)
     .contentShape(Rectangle())
     .onContinuousHover { phase in
       switch phase {
-      case .active(let point): hoveredMetric = metric(at: point)
+      case .active(let point): hoveredMetric = metric(at: point, side: side)
       case .ended: hoveredMetric = nil
       }
     }
@@ -156,10 +175,13 @@ struct WidgetView: View {
     }
   }
 
-  private func metric(at point: CGPoint) -> RingMetric? {
+  /// Maps a point in the ring stack to the metric drawn there. `side` is the
+  /// measured diameter, not a setting — hit-testing must agree with what was
+  /// actually drawn, and after a resize those are only the same by accident.
+  private func metric(at point: CGPoint, side: Double) -> RingMetric? {
     guard
       let index = ActivityRingsView.ringIndex(
-        at: point, side: config.widgetSize, count: rings.count,
+        at: point, side: side, count: rings.count,
         requested: config.ringThickness, spacing: config.ringSpacing)
     else { return nil }
     return rings.indices.contains(index) ? rings[index].metric : nil
@@ -179,11 +201,11 @@ struct WidgetView: View {
   }
 
   @ViewBuilder
-  private var centerReadout: some View {
+  private func centerReadout(side: Double) -> some View {
     if let focused {
       VStack(spacing: 1) {
         Text(focused.percentText)
-          .font(.system(size: config.widgetSize * 0.17, weight: .semibold, design: .rounded))
+          .font(.system(size: side * 0.17, weight: .semibold, design: .rounded))
           .foregroundStyle(focused.metric.color)
           .contentTransition(.numericText())
 
@@ -193,23 +215,23 @@ struct WidgetView: View {
           if isPinned {
             Circle()
               .fill(focused.metric.color)
-              .frame(width: config.widgetSize * 0.022, height: config.widgetSize * 0.022)
+              .frame(width: side * 0.022, height: side * 0.022)
           }
           Text(focused.metric.title.uppercased())
-            .font(.system(size: config.widgetSize * 0.055, weight: .bold, design: .rounded))
+            .font(.system(size: side * 0.055, weight: .bold, design: .rounded))
             .tracking(0.8)
             .foregroundStyle(.secondary)
         }
       }
       .lineLimit(1)
       .minimumScaleFactor(0.4)
-      .frame(maxWidth: innerDiameter * 0.82)
+      .frame(maxWidth: innerDiameter(side: side) * 0.82)
       .animation(.easeOut(duration: 0.18), value: focused.metric)
       .allowsHitTesting(false)
     }
   }
 
-  private var legend: some View {
+  private func legend(side: Double) -> some View {
     VStack(alignment: .leading, spacing: 4) {
       ForEach(rings) { ring in
         HStack(spacing: 6) {
@@ -228,7 +250,7 @@ struct WidgetView: View {
         }
       }
     }
-    .frame(width: config.widgetSize)
+    .frame(width: side)
   }
 
   // MARK: Controls
@@ -251,39 +273,18 @@ struct WidgetView: View {
     .padding(6)
   }
 
-  /// Drag to resize, from the widget rather than a slider in Settings.
+  /// Hint that the edges are draggable, shown only on hover.
   ///
-  /// A size control belongs on the thing being sized: you are choosing how big
-  /// this looks on your screen, which is a question you answer by looking at
-  /// it, not by nudging a number in another window and switching back.
-  private var resizeHandle: some View {
+  /// The resize itself is AppKit's: the panel is `.resizable`, so every edge
+  /// works and the pointer changes on its own. This is decoration, not a
+  /// control — which is precisely why it no longer fights the drag.
+  private var resizeHint: some View {
     Image(systemName: "arrow.down.right.and.arrow.up.left")
-      .font(.system(size: 9, weight: .bold))
+      .font(.system(size: 8, weight: .bold))
       .rotationEffect(.degrees(90))
-      .foregroundStyle(.secondary)
-      .frame(width: 18, height: 18)
-      .background(.ultraThinMaterial, in: Circle())
-      .padding(6)
-      .onHover { inside in
-        // The pointer says what the handle does before it is grabbed.
-        if inside { NSCursor.crosshair.push() } else { NSCursor.pop() }
-      }
-      .gesture(
-        DragGesture(minimumDistance: 1)
-          .onChanged { value in
-            let start = sizeAtDragStart ?? config.widgetSize
-            if sizeAtDragStart == nil { sizeAtDragStart = start }
-            // Both axes drive it, so a diagonal drag feels natural and either
-            // one alone still works.
-            let delta = (value.translation.width + value.translation.height) / 2
-            configStore.config.widgetSize = min(320, max(110, start + delta * 2))
-          }
-          .onEnded { _ in
-            sizeAtDragStart = nil
-            configStore.flush()
-          }
-      )
-      .help("Drag to resize")
+      .foregroundStyle(.tertiary)
+      .padding(7)
+      .allowsHitTesting(false)
   }
 
   private var controls: some View {

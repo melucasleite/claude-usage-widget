@@ -18,8 +18,11 @@ struct Config: Codable, Equatable {
   /// Widget opacity, 0.2...1.0.
   var opacity: Double = 1.0
 
-  /// Diameter of the ring stack in points.
-  var widgetSize: Double = 168
+  /// Width of the widget's content in points — the panel size, not the ring
+  /// diameter, which is derived from it after padding.
+  ///
+  /// Written by the window when you resize it, not by a slider.
+  var widgetSize: Double = 200
 
   /// Last known window origin, so the widget reopens where you left it.
   var windowOrigin: CGPoint?
