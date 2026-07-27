@@ -16,8 +16,10 @@ struct OnboardingView: View {
 
   @State private var testState: TestState = .idle
   @State private var copied = false
-  @State private var foundCLI = CredentialRefresher.locate() != nil
-  @State private var signedIn = CredentialStore.hasCredentials
+  // Both are resolved in `.task`, never as State defaults: each spawns a
+  // subprocess, and SwiftUI re-initialises the View struct on every update.
+  @State private var foundCLI = false
+  @State private var signedIn = false
 
   private enum TestState: Equatable {
     case idle, testing
@@ -72,7 +74,7 @@ struct OnboardingView: View {
       .padding(28)
     }
     .frame(width: 520, height: 540)
-    .onAppear {
+    .task {
       signedIn = CredentialStore.hasCredentials
       foundCLI = CredentialRefresher.locate() != nil
     }

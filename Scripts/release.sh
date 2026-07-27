@@ -227,20 +227,12 @@ echo "    passes with a download quarantine flag too"
 # ---------------------------------------------------------------------------
 step "Packaging"
 mkdir -p dist
-ZIP="dist/${APP_NAME}-${VERSION}.zip"
-rm -f "$ZIP"
-# ditto, not `zip`: it preserves the bundle's symlinks and extended attributes,
-# and a mangled bundle fails signature verification on arrival.
-ditto -c -k --keepParent "$APP" "$ZIP"
-# Record the checksum against the bare filename, not the path. `shasum -c`
-# resolves names relative to the working directory, so a stored "dist/..."
-# prefix makes verification fail for everyone who downloads the file into a
-# directory that is not a sibling of ours — i.e. everyone.
-( cd "$(dirname "$ZIP")" && shasum -a 256 "$(basename "$ZIP")" > "$(basename "$ZIP").sha256" )
-cat "${ZIP}.sha256"
-echo "    $(du -h "$ZIP" | cut -f1)  $ZIP"
-
-# Disk image, built from the already-stapled app so the ticket travels inside.
+# The disk image is the only published artifact.
+#
+# A .zip alongside it invites the question "which one do I want?", and the
+# honest answer is "always the dmg" — so shipping both only creates a wrong
+# choice to make. A zip is still produced internally to submit the app for
+# notarization; it just never leaves the temp directory.
 DMG="dist/${APP_NAME}-${VERSION}.dmg"
 ./Scripts/make-dmg.sh "$VERSION" --app "$APP" >/dev/null
 [[ -f "$DMG" ]] || fail "DMG was not produced"
@@ -273,7 +265,7 @@ echo "    $(du -h "$DMG" | cut -f1)  $DMG"
 # ---------------------------------------------------------------------------
 if [[ "$PUBLISH" == "0" ]]; then
   step "Done (not published)"
-  echo "    $ZIP"
+  echo "    $DMG"
   exit 0
 fi
 
@@ -282,7 +274,7 @@ command -v gh >/dev/null || fail "gh CLI not installed"
 
 if gh release view "$TAG" >/dev/null 2>&1; then
   echo "    $TAG exists — uploading assets"
-  gh release upload "$TAG" "$DMG" "${DMG}.sha256" "$ZIP" "${ZIP}.sha256" --clobber
+  gh release upload "$TAG" "$DMG" "${DMG}.sha256" --clobber
 else
   ARGS=(--title "$APP_NAME $VERSION" --notes-file -)
   [[ "$DRAFT" == "1" ]] && ARGS+=(--draft)
@@ -316,15 +308,13 @@ NOTES_EOF
 
   # Bare filenames, not paths: a checksum file is useless if `shasum -c` cannot
   # resolve the name from wherever the user downloaded it.
-  for artifact in "$DMG" "$ZIP"; do
-    printf '%s  %s\n' "$(shasum -a 256 "$artifact" | awk '{print $1}')" \
-      "$(basename "$artifact")" >> "$NOTES"
-  done
+  printf '%s  %s\n' "$(shasum -a 256 "$DMG" | awk '{print $1}')" \
+    "$(basename "$DMG")" >> "$NOTES"
   printf '```\n' >> "$NOTES"
 
   ARGS=(--title "$APP_NAME $VERSION" --notes-file "$NOTES")
   [[ "$DRAFT" == "1" ]] && ARGS+=(--draft)
-  gh release create "$TAG" "$DMG" "${DMG}.sha256" "$ZIP" "${ZIP}.sha256" "${ARGS[@]}"
+  gh release create "$TAG" "$DMG" "${DMG}.sha256" "${ARGS[@]}"
   rm -f "$NOTES"
 fi
 

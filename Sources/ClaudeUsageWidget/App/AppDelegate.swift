@@ -65,6 +65,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // First run: bring the setup guide forward rather than leaving someone
     // staring at a widget that cannot show anything yet.
     if !CredentialStore.hasCredentials { openOnboarding() }
+
+    // `--settings` opens the settings window straight away. Handy when the
+    // only way to reproduce a bug is to get there, and the app has no Dock
+    // icon to click through.
+    if CommandLine.arguments.contains("--settings") { openSettings() }
   }
 
   func applicationWillTerminate(_ notification: Notification) {

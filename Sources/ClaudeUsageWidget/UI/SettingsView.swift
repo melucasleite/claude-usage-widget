@@ -5,7 +5,13 @@ struct SettingsView: View {
   @ObservedObject var configStore: ConfigStore
   @ObservedObject var coordinator: UsageCoordinator
 
-  @State private var signedIn = CredentialStore.hasCredentials
+  // Deliberately NOT initialised from CredentialStore here.
+  //
+  // Reading it spawns `/usr/bin/security`, and SwiftUI re-initialises a View
+  // struct on every update — so a default value like `CredentialStore
+  // .hasCredentials` launches a subprocess during rendering, repeatedly, on
+  // the main thread. That is what crashed the settings window.
+  @State private var signedIn = false
 
   private var config: Binding<Config> { $configStore.config }
 
@@ -16,6 +22,7 @@ struct SettingsView: View {
       connectionTab.tabItem { Label("Connection", systemImage: "link") }
     }
     .frame(width: 460, height: 420)
+    .task { signedIn = CredentialStore.hasCredentials }
   }
 
   // MARK: Appearance
