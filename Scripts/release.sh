@@ -128,9 +128,18 @@ UNRELEASED_EOF
     echo "    (already at this version, nothing to commit)"
   elif [[ "$COMMIT_BUMP" == "1" ]]; then
     git add project.yml Resources/Info.plist ReleaseNotes 2>/dev/null || true
+    # Failing to commit is fatal, not a warning.
+    #
+    # This once printed "could not commit; continuing" and carried on, and a
+    # signing hiccup was enough to publish a build whose source was nowhere in
+    # the repository. A release that cannot be traced back to a commit is not a
+    # release, it is a mystery binary.
     git commit -q -m "Release $VERSION" -- project.yml Resources/Info.plist ReleaseNotes \
-      && echo "    committed the bump" \
-      || echo "    (could not commit; continuing)"
+      || fail "could not commit the version bump.
+
+  Releasing anyway would publish a build with no commit behind it. Fix the
+  commit — a signing or hook failure is the usual cause — and re-run."
+    echo "    committed the bump"
   fi
 fi
 
@@ -184,10 +193,20 @@ if [[ "$BUNDLE_VERSION" != "$VERSION" ]]; then
 fi
 echo "    bundle reports $BUNDLE_VERSION"
 
-# Tag the commit that actually produced this build, so a bug report can be
-# traced back to source.
+# Refuse to publish a build whose source is not committed.
+#
+# The provenance line used to merely note "(dirty)" and carry on, which is a
+# footnote nobody reads at the exact moment it matters most.
 if git rev-parse --git-dir >/dev/null 2>&1; then
-  echo "    built from $(git rev-parse --short HEAD)$(git diff --quiet || echo ' (dirty)')"
+  if [[ "$PUBLISH" == "1" ]] && ! git diff --quiet HEAD -- Sources Resources project.yml; then
+    fail "the working tree has uncommitted changes under Sources/, Resources/ or
+  project.yml. Publishing now would ship a binary that matches no commit:
+
+$(git status --short -- Sources Resources project.yml | sed 's/^/    /')
+
+  Commit them, or pass --no-publish to build without releasing."
+  fi
+  echo "    built from $(git rev-parse --short HEAD)"
 fi
 
 # ---------------------------------------------------------------------------
