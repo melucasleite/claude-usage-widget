@@ -295,3 +295,32 @@ final class RingHitTestingTests: XCTestCase {
       "centre hole collapsed")
   }
 }
+
+/// The rate-limit countdown is the only thing on screen during a wait, so its
+/// formatting is the whole message.
+final class WaitingClockTests: XCTestCase {
+
+  func testMinutesAndSeconds() {
+    XCTAssertEqual(WaitingView.clock(32 * 60 + 7), "32:07")
+    XCTAssertEqual(WaitingView.clock(59), "0:59")
+    XCTAssertEqual(WaitingView.clock(0), "0:00")
+  }
+
+  /// An hour-long Retry-After is real — that is what the endpoint returned
+  /// today — so it must not render as "60:00" or worse.
+  func testHoursAppearOnlyWhenNeeded() {
+    XCTAssertEqual(WaitingView.clock(3600), "1:00:00")
+    XCTAssertEqual(WaitingView.clock(3599), "59:59")
+    XCTAssertEqual(WaitingView.clock(3600 + 4 * 60 + 11), "1:04:11")
+  }
+
+  func testSnapshotKnowsWhenItHasNothingToDraw() {
+    var snapshot = UsageSnapshot()
+    for metric in RingMetric.allCases { snapshot.rings[metric] = .unavailable(metric) }
+    XCTAssertFalse(snapshot.hasData, "all-unavailable rings are not data")
+
+    snapshot.rings[.weekly] = RingDatum(
+      metric: .weekly, progress: 0.49, resetsAt: nil, isAvailable: true)
+    XCTAssertTrue(snapshot.hasData)
+  }
+}

@@ -17,10 +17,24 @@ struct WidgetView: View {
 
   @State private var hovering = false
   @State private var hoveredMetric: RingMetric?
+  /// Longest remaining time seen during the current wait, so the draining arc
+  /// has a stable denominator.
+  @State private var longestWait: Double = 1
 
   private var config: Config { configStore.config }
   private var rings: [RingDatum] { coordinator.snapshot.ordered(by: config.visibleMetrics) }
   private var needsToken: Bool { coordinator.snapshot.status == .needsToken }
+
+  /// A wait worth showing a countdown for: one is running, and we have nothing
+  /// to display underneath it. With cached rings there is no reason to hide
+  /// them behind a timer.
+  private var waitingUntil: Date? {
+    guard !coordinator.snapshot.hasData,
+      let retryAt = coordinator.snapshot.retryAt,
+      retryAt > Date()
+    else { return nil }
+    return retryAt
+  }
 
   /// Clear space inside the innermost ring, using the same adaptive thickness
   /// the rings are drawn with so the two cannot drift apart.
@@ -51,6 +65,8 @@ struct WidgetView: View {
     VStack(spacing: 10) {
       if needsToken {
         setupPrompt
+      } else if let waitingUntil {
+        WaitingView(until: waitingUntil, size: config.widgetSize, total: longestWait)
       } else {
         ringStack
         if config.showLegend { legend }
@@ -61,9 +77,14 @@ struct WidgetView: View {
     .padding(config.showBackground ? 16 : max(8, config.ringThickness * 0.4))
     .background(background)
     .overlay(alignment: .topLeading) { if hovering { closeButton } }
-    .overlay(alignment: .topTrailing) { if hovering && !needsToken { controls } }
+    .overlay(alignment: .topTrailing) {
+      if hovering && !needsToken && waitingUntil == nil { controls }
+    }
     .opacity(config.opacity)
     .onHover { hovering = $0 }
+    .onChange(of: coordinator.snapshot.retryAt) { _, retryAt in
+      longestWait = max(1, retryAt?.timeIntervalSinceNow ?? 1)
+    }
     .help(needsToken ? "Sign in to Claude Code to start showing usage" : tooltip)
   }
 

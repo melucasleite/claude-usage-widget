@@ -14,6 +14,7 @@ final class UsageCoordinator: ObservableObject {
 
   private let live = OAuthUsageProvider()
   private var timer: Timer?
+  private var wakeTimer: Timer?
   private var config: Config
 
   // MARK: Rate-limit state
@@ -105,6 +106,8 @@ final class UsageCoordinator: ObservableObject {
   func stop() {
     timer?.invalidate()
     timer = nil
+    wakeTimer?.invalidate()
+    wakeTimer = nil
   }
 
   /// Called after the credential situation changes, to pick it up at once.
@@ -171,6 +174,7 @@ final class UsageCoordinator: ObservableObject {
         saveRateLimitState()
         next.rings = cachedWindows.map(buildRings) ?? [:]
         next.status = .failed(statusText(now: now))
+        next.retryAt = liveBackoffUntil
       }
     } else if cacheIsFresh(now: now), let cached = cachedWindows {
       // Not stale yet: this is simply the reading we already have.
@@ -182,9 +186,11 @@ final class UsageCoordinator: ObservableObject {
       // at worst, which beats blanking the rings.
       next.rings = cachedWindows.map(buildRings) ?? [:]
       next.status = .failed(statusText(now: now))
+      next.retryAt = liveBackoffUntil
     }
 
     snapshot = next
+    scheduleWake(for: next.retryAt)
   }
 
   /// Fetches, and on a rejected token asks Claude Code to refresh once before
@@ -216,6 +222,24 @@ final class UsageCoordinator: ObservableObject {
       lastRefreshOutcome = outcome
       return try await live.fetch()
     }
+  }
+
+  /// Wakes up exactly when a wait expires.
+  ///
+  /// The poll timer is five minutes, so without this a rate limit that ended
+  /// could leave the rings dark for another five — long enough that a person
+  /// reasonably concludes it is broken and starts clicking Refresh, which is
+  /// the one thing guaranteed not to help.
+  private func scheduleWake(for date: Date?) {
+    wakeTimer?.invalidate()
+    wakeTimer = nil
+    guard let date, date > Date() else { return }
+    let timer = Timer(fire: date.addingTimeInterval(1), interval: 0, repeats: false) {
+      [weak self] _ in
+      Task { @MainActor in await self?.refresh() }
+    }
+    RunLoop.main.add(timer, forMode: .common)
+    wakeTimer = timer
   }
 
   private func statusText(now: Date) -> String {

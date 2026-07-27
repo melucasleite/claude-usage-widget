@@ -15,7 +15,11 @@ enum PreviewRenderer {
     let args = CommandLine.arguments
     guard let flagIndex = args.firstIndex(of: "--render-preview") else { return false }
     let outPath = args.indices.contains(flagIndex + 1) ? args[flagIndex + 1] : "preview.png"
-    render(rings: demoRings(), to: URL(fileURLWithPath: outPath))
+    if args.contains("--waiting") {
+      renderWaiting(to: URL(fileURLWithPath: outPath))
+    } else {
+      render(rings: demoRings(), to: URL(fileURLWithPath: outPath))
+    }
     return true
   }
 
@@ -34,6 +38,25 @@ enum PreviewRenderer {
         metric: .fable, progress: 1.18,
         resetsAt: now.addingTimeInterval(3600), isAvailable: true),
     ]
+  }
+
+  /// Renders the rate-limit countdown, so the layout can be checked without
+  /// having to actually be rate limited.
+  static func renderWaiting(to url: URL, size: CGFloat = 260) {
+    let content =
+      ZStack {
+        RoundedRectangle(cornerRadius: 28, style: .continuous)
+          .fill(Color(hex: 0x1C1C1E))
+          .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+              .strokeBorder(.white.opacity(0.10), lineWidth: 1))
+        WaitingView(
+          until: Date().addingTimeInterval(32 * 60 + 7), size: size * 0.72,
+          total: 60 * 60)
+      }
+      .frame(width: size, height: size * 1.05)
+      .environment(\.colorScheme, .dark)
+    write(content, to: url)
   }
 
   // MARK: - Rendering
@@ -96,6 +119,10 @@ enum PreviewRenderer {
       .frame(width: size, height: size * 1.34)
       .environment(\.colorScheme, .dark)
 
+    write(content, to: url)
+  }
+
+  private static func write(_ content: some View, to url: URL) {
     let renderer = ImageRenderer(content: content)
     renderer.scale = 2.0
     renderer.isOpaque = true

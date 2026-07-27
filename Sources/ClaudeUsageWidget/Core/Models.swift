@@ -105,6 +105,13 @@ struct UsageSnapshot: Equatable, Sendable {
   var rings: [RingMetric: RingDatum] = [:]
   var lastUpdated: Date?
   var status: Status = .needsToken
+  /// When the current wait ends, if one is running. Drives the countdown the
+  /// widget shows instead of blank rings.
+  var retryAt: Date?
+
+  /// True when at least one ring has a real number to draw. Empty rings and
+  /// "no data" look identical at a glance, and only one of them is true.
+  var hasData: Bool { rings.values.contains(where: \.isAvailable) }
 
   /// What the widget should be showing right now.
   enum Status: Equatable, Sendable {
