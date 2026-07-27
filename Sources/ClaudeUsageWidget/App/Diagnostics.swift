@@ -82,20 +82,20 @@ enum Diagnostics {
       }
     }
 
+    // Probed in the same order `CredentialStore.load()` uses: the tool that
+    // is already on the item's ACL first, so the common path never prompts.
     var creds: OAuthCredentials?
-    if let fromKeychain = try? CredentialStore.loadFromKeychain() {
-      creds = fromKeychain
-      print("    ✓ loaded from Keychain")
+    if let viaTool = try? CredentialStore.loadViaSecurityTool() {
+      creds = viaTool
+      print("    ✓ loaded via /usr/bin/security (no prompt path)")
     }
     if creds == nil, let fromFile = try? CredentialStore.loadFromFile() {
       creds = fromFile
       print("    ✓ loaded from \(CredentialStore.credentialsFileURL.path)")
-    } else if creds == nil {
-      print("    · not present at \(CredentialStore.credentialsFileURL.path)")
     }
-    if creds == nil, let viaTool = try? CredentialStore.loadViaSecurityTool() {
-      creds = viaTool
-      print("    ✓ loaded via /usr/bin/security")
+    if creds == nil, let fromKeychain = try? CredentialStore.loadFromKeychain() {
+      creds = fromKeychain
+      print("    ✓ loaded via Keychain API (this is the path that prompts)")
     }
 
     guard let creds else {

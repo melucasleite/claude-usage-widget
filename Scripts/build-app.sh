@@ -91,13 +91,42 @@ mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources"
 cp "$BIN" "${APP_DIR}/Contents/MacOS/${APP_NAME}"
 cp Resources/Info.plist "${APP_DIR}/Contents/Info.plist"
 
-# Ad-hoc signature. Without this the Keychain treats every rebuild as a
-# different application and re-prompts for access to the Claude credentials.
-# A stable identifier keeps that prompt to a one-time thing.
-echo "==> codesign (ad-hoc)"
-codesign --force --sign - \
-  --identifier "us.lucasleite.ClaudeUsageWidget" \
-  "$APP_DIR" >/dev/null 2>&1 || echo "   (ad-hoc signing skipped)"
+# --- signing --------------------------------------------------------------
+#
+# This matters more than it looks. Keychain access grants ("Always Allow") are
+# bound to the application's *code identity*. An ad-hoc signature has no stable
+# identity — its hash changes with every rebuild — so each new build looks like
+# a brand new application and macOS asks for permission all over again. That is
+# the "I keep clicking Always Allow and it never sticks" symptom.
+#
+# Signing with a real identity (any Apple Development certificate will do; this
+# is never distributed) gives a stable designated requirement, so the grant
+# survives rebuilds. Fall back to ad-hoc if no certificate exists.
+#
+# Set CODESIGN_IDENTITY to pick a specific one.
+if [[ -z "${CODESIGN_IDENTITY:-}" ]]; then
+  CODESIGN_IDENTITY="$(
+    security find-identity -v -p codesigning 2>/dev/null \
+      | sed -n 's/.*"\(.*\)"/\1/p' | head -1
+  )"
+fi
+
+if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
+  echo "==> codesign: ${CODESIGN_IDENTITY}"
+  codesign --force --sign "$CODESIGN_IDENTITY" \
+    --identifier "us.lucasleite.ClaudeUsageWidget" \
+    --options runtime \
+    "$APP_DIR" 2>/dev/null \
+    || codesign --force --sign "$CODESIGN_IDENTITY" \
+      --identifier "us.lucasleite.ClaudeUsageWidget" \
+      "$APP_DIR" >/dev/null 2>&1 \
+    || echo "   (signing failed; falling back to ad-hoc)"
+else
+  echo "==> codesign (ad-hoc — expect repeated Keychain prompts after rebuilds)"
+  codesign --force --sign - \
+    --identifier "us.lucasleite.ClaudeUsageWidget" \
+    "$APP_DIR" >/dev/null 2>&1 || echo "   (ad-hoc signing skipped)"
+fi
 
 echo "==> built ${APP_DIR}"
 

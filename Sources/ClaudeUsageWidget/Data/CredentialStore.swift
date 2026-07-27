@@ -119,12 +119,23 @@ enum CredentialStore {
     }
   }
 
-  /// Loads credentials, trying each source in order of least friction.
-  /// Throws rather than returning a partially-valid token.
+  /// Loads credentials, ordered by how likely each source is to interrupt you.
+  ///
+  /// `/usr/bin/security` goes **first**, which looks backwards but is not.
+  /// Claude Code creates its Keychain item by shelling out to
+  /// `security add-generic-password`, so `/usr/bin/security` is already on that
+  /// item's access-control list and reads it without prompting. Calling
+  /// `SecItemCopyMatching` from this app is a *different* binary asking for
+  /// someone else's item, which is exactly the thing macOS puts a dialog in
+  /// front of.
+  ///
+  /// Trying the direct API first — as this used to — meant eating a permission
+  /// prompt on every launch before falling back to the path that would have
+  /// worked silently.
   static func load() throws -> OAuthCredentials {
-    if let fromKeychain = try? loadFromKeychain() { return fromKeychain }
-    if let fromFile = try? loadFromFile() { return fromFile }
     if let viaTool = try? loadViaSecurityTool() { return viaTool }
+    if let fromFile = try? loadFromFile() { return fromFile }
+    if let fromKeychain = try? loadFromKeychain() { return fromKeychain }
     throw CredentialError.notFound
   }
 

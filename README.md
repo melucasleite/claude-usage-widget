@@ -163,9 +163,9 @@ You can override any denominator manually in Settings → Data.
 The app reads the Claude OAuth token that Claude Code already stores on your
 machine. It is worth being precise about what that does and does not involve:
 
-- The token is **read** from the macOS Keychain (falling back to
-  `~/.claude/.credentials.json`, then to `/usr/bin/security`). It is never
-  written anywhere by this app — not to its config, not to logs, not to disk.
+- The token is **read** via `/usr/bin/security`, falling back to
+  `~/.claude/.credentials.json` and then the Keychain API. It is never written
+  anywhere by this app — not to its config, not to logs, not to disk.
 - `OAuthCredentials` overrides `description` and `debugDescription` to print
   `<redacted>`, so interpolating one into a log line cannot leak it. There is a
   unit test asserting this, specifically so that deleting the redaction turns
@@ -184,6 +184,34 @@ Claude Code does not use one fixed Keychain service name. It builds one:
 where the trailing hash is present only when `CLAUDE_CONFIG_DIR` is set. So the
 app discovers the name by pattern instead of hardcoding a spelling that is
 right on some machines and wrong on others.
+
+### Why `/usr/bin/security` comes first
+
+Keychain access is granted per *application*, and Claude Code creates its
+credential item by shelling out to `security add-generic-password` — which puts
+`/usr/bin/security` on that item's access-control list. Reading through the
+same tool is therefore silent, while calling `SecItemCopyMatching` from this app
+is a different binary asking for someone else's item, which is exactly what
+macOS puts a dialog in front of.
+
+Related: those grants are bound to the app's **code identity**. An ad-hoc
+signature changes identity on every rebuild, so "Always Allow" is invalidated
+each time you rebuild — the classic "I keep allowing it and it never sticks".
+The build script therefore signs with a real certificate when one exists
+(any Apple Development cert; nothing here is distributed), which keeps the
+grant stable across rebuilds:
+
+```bash
+CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./Scripts/build-app.sh
+```
+
+### Why not an API key?
+
+`ANTHROPIC_API_KEY` does not help here and would report the wrong thing. The
+usage endpoint reports *subscription* limits — the Max plan's 5-hour, weekly
+and per-model windows. An API key authenticates a separate pay-as-you-go
+billing path; it is not accepted by this OAuth-scoped endpoint, and API console
+spend has no relationship to your plan's quotas.
 
 ### If the widget shows no live data
 
