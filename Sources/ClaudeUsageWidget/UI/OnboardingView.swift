@@ -138,8 +138,13 @@ struct OnboardingView: View {
         Label(message, systemImage: "exclamationmark.triangle.fill")
           .font(.callout).foregroundStyle(.orange)
           .fixedSize(horizontal: false, vertical: true)
-        Text("Generate a fresh token with `claude setup-token` and try again.")
-          .font(.caption).foregroundStyle(.secondary)
+        if message.contains("rate limited") {
+          Text("Nothing is wrong with the token — the endpoint is just busy.")
+            .font(.caption).foregroundStyle(.secondary)
+        } else {
+          Text("Generate a fresh token with `claude setup-token` and try again.")
+            .font(.caption).foregroundStyle(.secondary)
+        }
       }
     }
   }
@@ -167,6 +172,21 @@ struct OnboardingView: View {
     }
     saved = true
     tokenEntry = ""
+
+    // Respect an active rate limit. Testing straight through one produces a
+    // failure that says nothing about the token — which is exactly the
+    // confusion this screen exists to prevent.
+    if let state = UsageCoordinator.loadPersistedRateLimitState(),
+      let until = state.backoffUntil, until > Date()
+    {
+      let minutes = max(1, Int(until.timeIntervalSinceNow / 60))
+      testState = .failed(
+        "Saved, but cannot test yet: the usage endpoint is rate limited for another "
+          + "\(minutes) minute(s). The widget will pick it up automatically.")
+      coordinator.tokenChanged()
+      return
+    }
+
     testState = .testing
 
     Task {

@@ -3,9 +3,9 @@ import Foundation
 /// Fetches authoritative limit utilisation from Anthropic's usage endpoint.
 ///
 /// This endpoint is **undocumented and unofficial** — it is what `/usage`
-/// inside Claude Code talks to. It can change or disappear without notice,
-/// which is exactly why `UsageCoordinator` always keeps the local transcript
-/// estimator alive as a fallback.
+/// inside Claude Code talks to. It can change or disappear without notice, and
+/// there is no fallback: when it cannot answer, the rings say so rather than
+/// showing a number nobody sent.
 actor OAuthUsageProvider {
 
   static let endpoint = URL(string: "https://api.anthropic.com/api/oauth/usage")!
@@ -22,9 +22,12 @@ actor OAuthUsageProvider {
   }
 
   enum ProviderError: LocalizedError {
-    case http(Int)
+    case http(Int, detail: String?)
     case rateLimited(retryAfter: TimeInterval?)
-    case unauthorized
+    /// Carries the server's own explanation when it gives one. A 401 that says
+    /// "insufficient scope" and a 401 that says "expired" call for completely
+    /// different actions, and only the server knows which it is.
+    case unauthorized(detail: String?)
     case decoding
 
     var errorDescription: String? {
@@ -32,12 +35,35 @@ actor OAuthUsageProvider {
       case .rateLimited(let retry):
         if let retry { return "Rate limited; retrying in \(Int(retry))s" }
         return "Rate limited by the usage endpoint"
-      case .unauthorized:
-        return "Token rejected — run `claude` once to refresh it"
-      case .http(let code): return "Usage endpoint returned HTTP \(code)"
+      case .unauthorized(let detail):
+        if let detail, !detail.isEmpty { return "Token rejected: \(detail)" }
+        return "Token rejected — generate a new one with `claude setup-token`"
+      case .http(let code, let detail):
+        if let detail, !detail.isEmpty { return "HTTP \(code): \(detail)" }
+        return "Usage endpoint returned HTTP \(code)"
       case .decoding: return "Could not decode the usage response"
       }
     }
+  }
+
+  /// Pulls a human-readable message out of an error response.
+  ///
+  /// Anthropic returns `{"error": {"type": "...", "message": "..."}}`. Throwing
+  /// that away and substituting our own guess is how "Token rejected" ends up
+  /// meaning four different things.
+  static func errorDetail(from data: Data) -> String? {
+    guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      let raw = String(data: data, encoding: .utf8)?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      return (raw?.isEmpty == false) ? String(raw!.prefix(200)) : nil
+    }
+    if let error = root["error"] as? [String: Any] {
+      let type = error["type"] as? String
+      let message = error["message"] as? String
+      return [message, type.map { "(\($0))" }].compactMap { $0 }.joined(separator: " ")
+    }
+    if let message = root["message"] as? String { return message }
+    return nil
   }
 
   func fetch() async throws -> UsageWindows {
@@ -57,14 +83,14 @@ actor OAuthUsageProvider {
     guard let http = response as? HTTPURLResponse else { throw ProviderError.decoding }
 
     if http.statusCode == 401 || http.statusCode == 403 {
-      throw ProviderError.unauthorized
+      throw ProviderError.unauthorized(detail: Self.errorDetail(from: data))
     }
     if http.statusCode == 429 {
       let retry = (http.value(forHTTPHeaderField: "Retry-After")).flatMap(TimeInterval.init)
       throw ProviderError.rateLimited(retryAfter: retry)
     }
     guard (200..<300).contains(http.statusCode) else {
-      throw ProviderError.http(http.statusCode)
+      throw ProviderError.http(http.statusCode, detail: Self.errorDetail(from: data))
     }
 
     return try UsageWindows(data: data)

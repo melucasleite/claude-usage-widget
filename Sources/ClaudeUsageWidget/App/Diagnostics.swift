@@ -95,9 +95,15 @@ enum Diagnostics {
           reason: error.localizedDescription)
         print("      Recorded — the widget and --check will now wait it out.")
       }
-      if case OAuthUsageProvider.ProviderError.unauthorized = error {
-        print("      The token was rejected. Generate a fresh one:")
-        print("        claude setup-token")
+      if case OAuthUsageProvider.ProviderError.unauthorized(let detail) = error {
+        print("      The server's own words are above — they matter here.")
+        print("      · if it mentions expiry: generate a fresh `claude setup-token`")
+        print("      · if it mentions scope or permission: a setup-token may not")
+        print("        carry the scope this endpoint needs, in which case no")
+        print("        amount of regenerating will help")
+        if detail == nil {
+          print("      · no detail returned, which is itself unusual")
+        }
       }
       exit(1)
 

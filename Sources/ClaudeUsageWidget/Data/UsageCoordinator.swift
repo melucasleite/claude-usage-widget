@@ -82,11 +82,18 @@ final class UsageCoordinator: ObservableObject {
   }
 
   /// Called after the token changes, to pick it up at once.
+  ///
+  /// A new token clears a wait we imposed because of *that token* — but not a
+  /// rate limit, which is about request volume and is indifferent to who is
+  /// asking. Clearing it would just walk straight back into the limit.
   func tokenChanged() {
-    liveBackoffUntil = nil
-    consecutiveFailures = 0
-    lastFailureReason = nil
-    saveRateLimitState()
+    let rateLimited = (lastFailureReason ?? "").localizedCaseInsensitiveContains("rate limited")
+    if !rateLimited {
+      liveBackoffUntil = nil
+      consecutiveFailures = 0
+      lastFailureReason = nil
+      saveRateLimitState()
+    }
     Task { await refresh(force: true) }
   }
 
