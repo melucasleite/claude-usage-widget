@@ -85,9 +85,10 @@ That produces `dist/ClaudeUsageWidget.app` and launches it.
   persists across relaunches. Unpinned, the centre follows whichever ring is
   closest to its limit.
 - **Drag** the widget anywhere. Its position is remembered.
-- **Hover** the widget for its controls: a close button top-left, refresh and
-  settings top-right. Closing *hides* the widget — the app keeps running and
-  the menu bar brings it back.
+- **Hover** the widget for its controls: close top-left, refresh and settings
+  top-right. Close quits the app — the widget *is* the app, so leaving a menu
+  bar item behind would not feel like closing. To keep it running but out of
+  sight, use **Hide Widget** in the menu instead.
 - **Right-click** the widget, or click the menu bar readout, for the full menu
   — including *Centre Shows*, which pins a ring without clicking one.
 - **Always on top** is a toggle — in the menu, or in Settings → Appearance.

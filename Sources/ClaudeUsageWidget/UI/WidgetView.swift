@@ -180,14 +180,19 @@ struct WidgetView: View {
     .frame(width: config.widgetSize)
   }
 
-  /// Hover-revealed dismiss, mirroring the controls on the right.
+  /// Hover-revealed close, mirroring the controls on the right.
   ///
-  /// This *hides* the widget rather than quitting — the app keeps running and
-  /// the menu bar brings it back. Quitting lives in the menu, where an
-  /// irreversible action belongs.
+  /// This quits the app outright rather than hiding it. Not the usual macOS
+  /// reading of a close button, but the right one here: the widget *is* the
+  /// app, so leaving a menu bar item behind after you dismissed the only thing
+  /// you can see reads as not having closed. Hiding is still available from
+  /// the menu for anyone who wants it.
+  ///
+  /// No confirmation — relaunching costs one click, and nothing is lost:
+  /// settings persist on every change and the transcript index is on disk.
   private var closeButton: some View {
     Button {
-      NotificationCenter.default.post(name: .hideWidget, object: nil)
+      NSApplication.shared.terminate(nil)
     } label: {
       Image(systemName: "xmark")
         .font(.system(size: 9, weight: .bold))
@@ -196,7 +201,7 @@ struct WidgetView: View {
         .background(.ultraThinMaterial, in: Circle())
     }
     .buttonStyle(.plain)
-    .help("Hide the widget — bring it back from the menu bar")
+    .help("Quit Claude Usage Widget")
     .padding(6)
   }
 
@@ -255,5 +260,4 @@ struct WidgetView: View {
 
 extension Notification.Name {
   static let openSettings = Notification.Name("ClaudeUsageWidget.openSettings")
-  static let hideWidget = Notification.Name("ClaudeUsageWidget.hideWidget")
 }

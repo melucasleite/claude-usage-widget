@@ -38,11 +38,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
       .store(in: &cancellables)
 
-    NotificationCenter.default.publisher(for: .hideWidget)
-      .receive(on: RunLoop.main)
-      .sink { [weak self] _ in self?.hideWidget() }
-      .store(in: &cancellables)
-
     NotificationCenter.default.publisher(for: .openSettings)
       .receive(on: RunLoop.main)
       .sink { [weak self] _ in self?.openSettings() }
@@ -73,18 +68,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   // MARK: - Windows
-
-  /// Hides the widget, keeping the app alive.
-  ///
-  /// Guards against stranding: with the menu bar readout switched off, hiding
-  /// the only visible surface would leave no way back short of relaunching.
-  /// So closing turns the menu bar item back on if it is off.
-  private func hideWidget() {
-    if !configStore.config.showMenuBarItem {
-      configStore.config.showMenuBarItem = true
-    }
-    panel?.orderOut(nil)
-  }
 
   private func toggleWidget() {
     guard let panel else { return }
