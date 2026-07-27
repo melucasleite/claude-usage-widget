@@ -31,8 +31,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.0.11"
-    CURRENT_PROJECT_VERSION: "8"
+    MARKETING_VERSION: "1.1.0"
+    CURRENT_PROJECT_VERSION: "9"
     # Required for notarization. Without it, notarytool rejects the upload.
     ENABLE_HARDENED_RUNTIME: YES
     # This app must NOT be sandboxed: it reads Claude Code's Keychain item and
