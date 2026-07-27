@@ -125,6 +125,24 @@ enum Diagnostics {
     print("    · token value: <redacted, and it stays that way>\n")
 
     // 2. Live endpoint
+    //
+    // Honour any active backoff unless explicitly overridden. A diagnostic
+    // that ignores the rate limit is how a short wait becomes a long one —
+    // repeated --check runs are what earned a one-hour Retry-After once.
+    if let state = UsageCoordinator.loadPersistedRateLimitState(),
+      let until = state.backoffUntil, until > Date(),
+      !CommandLine.arguments.contains("--force")
+    {
+      let secs = Int(until.timeIntervalSinceNow)
+      print("[2] Usage endpoint")
+      print("    · SKIPPED — backing off for another \(secs)s")
+      if let reason = state.lastFailureReason {
+        print("    · last failure: \(reason)")
+      }
+      print("    · pass --force to query anyway (it will probably deepen the wait)")
+      exit(0)
+    }
+
     print("[2] Usage endpoint")
     print("    · GET \(OAuthUsageProvider.endpoint.absoluteString)")
     print("    · User-Agent: \(OAuthUsageProvider.userAgent)")
@@ -167,6 +185,14 @@ enum Diagnostics {
 
     case .failure(let error):
       print("    ✗ \(error.localizedDescription)\n")
+      // Record what we just learned, so the app and any later --check both
+      // honour this wait instead of rediscovering it the hard way.
+      if case OAuthUsageProvider.ProviderError.rateLimited(let retryAfter) = error {
+        UsageCoordinator.persistRateLimit(
+          until: Date().addingTimeInterval(retryAfter ?? 60),
+          reason: error.localizedDescription)
+        print("      Recorded — the widget and --check will now wait it out.")
+      }
       print("      Common causes:")
       print("      · expired token — run `claude` to refresh it")
       print("      · missing User-Agent — that bucket 429s aggressively")

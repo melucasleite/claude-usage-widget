@@ -48,6 +48,7 @@ final class UsageCoordinator: ObservableObject {
 
   init(config: Config) {
     self.config = config
+    loadRateLimitState()
   }
 
   /// Adopts new settings, refreshing **only** if they change what we fetch.
@@ -118,8 +119,18 @@ final class UsageCoordinator: ObservableObject {
     }
 
     // Live, unless disabled, throttled, or backing off.
+    //
+    // `force` overrides our own throttle, but deliberately NOT a long
+    // server-directed wait: letting someone click through a one-hour
+    // Retry-After just deepens the hole they are already in.
+    let respectServerWait =
+      isBackingOff(now: now)
+      && (liveBackoffUntil.map { $0.timeIntervalSince(now) > 120 } ?? false)
+
     var windows: UsageWindows?
-    if config.useLiveAPI, force || (!isBackingOff(now: now) && !isThrottled(now: now)) {
+    if config.useLiveAPI,
+      (force && !respectServerWait) || (!isBackingOff(now: now) && !isThrottled(now: now))
+    {
       do {
         windows = try await live.fetch()
         cachedWindows = windows
@@ -128,12 +139,15 @@ final class UsageCoordinator: ObservableObject {
         consecutiveLiveFailures = 0
         liveBackoffUntil = nil
         failedTokenFingerprint = nil
+        lastFailureReason = nil
+        saveRateLimitState()
       } catch {
         lastLiveFetch = now
         next.liveSourceStatus = .failed(error.localizedDescription)
         lastFailureReason = error.localizedDescription
         failedTokenFingerprint = currentTokenFingerprint()
         noteLiveFailure(error: error, now: now)
+        saveRateLimitState()
       }
     } else if config.useLiveAPI, isThrottled(now: now), let cached = cachedWindows {
       // Too soon to ask again, but the last answer is seconds old.
@@ -221,6 +235,64 @@ final class UsageCoordinator: ObservableObject {
       let delay = min(300, pow(2, Double(consecutiveLiveFailures)) * 15)
       liveBackoffUntil = now.addingTimeInterval(delay)
     }
+  }
+
+  // MARK: - Persisted rate-limit state
+  //
+  // Backoff used to live only in memory, which quietly defeated it: quitting
+  // and reopening the app reset the timer and fired a request immediately. A
+  // handful of relaunches while debugging is enough to earn a one-hour
+  // Retry-After, and the app would keep walking straight into it.
+  //
+  // It is now written to disk, so a restart resumes the wait rather than
+  // restarting the offence.
+
+  struct RateLimitState: Codable {
+    var backoffUntil: Date?
+    var lastLiveFetch: Date?
+    var lastFailureReason: String?
+  }
+
+  static var rateLimitStateURL: URL {
+    Config.fileURL.deletingLastPathComponent().appendingPathComponent("rate-limit.json")
+  }
+
+  /// Records a rate limit discovered outside the coordinator (i.e. by
+  /// `--check`), so every entry point respects the same wait.
+  static func persistRateLimit(until: Date, reason: String) {
+    var state = loadPersistedRateLimitState() ?? RateLimitState()
+    state.backoffUntil = until
+    state.lastFailureReason = reason
+    if let data = try? JSONEncoder().encode(state) {
+      try? data.write(to: rateLimitStateURL, options: .atomic)
+    }
+  }
+
+  /// Shared with `--check`, so diagnostics honour the same wait.
+  static func loadPersistedRateLimitState() -> RateLimitState? {
+    guard let data = try? Data(contentsOf: rateLimitStateURL),
+      let state = try? JSONDecoder().decode(RateLimitState.self, from: data)
+    else { return nil }
+    return state
+  }
+
+  private func loadRateLimitState() {
+    guard let data = try? Data(contentsOf: Self.rateLimitStateURL),
+      let state = try? JSONDecoder().decode(RateLimitState.self, from: data)
+    else { return }
+    // Ignore anything already in the past.
+    if let until = state.backoffUntil, until > Date() { liveBackoffUntil = until }
+    lastLiveFetch = state.lastLiveFetch
+    lastFailureReason = state.lastFailureReason
+  }
+
+  private func saveRateLimitState() {
+    let state = RateLimitState(
+      backoffUntil: liveBackoffUntil,
+      lastLiveFetch: lastLiveFetch,
+      lastFailureReason: lastFailureReason)
+    guard let data = try? JSONEncoder().encode(state) else { return }
+    try? data.write(to: Self.rateLimitStateURL, options: .atomic)
   }
 
   /// Fingerprint of the credential that last failed, so a new token is noticed

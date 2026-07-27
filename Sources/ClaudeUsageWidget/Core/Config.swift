@@ -61,9 +61,13 @@ struct Config: Codable, Equatable {
 
   // MARK: Data
 
-  /// Seconds between refreshes. The usage endpoint is rate limited, so
-  /// anything under ~30s is a bad idea.
-  var refreshInterval: Double = 60
+  /// Seconds between refreshes.
+  ///
+  /// The usage endpoint is rate limited more tightly than it looks — a busy
+  /// afternoon of polling plus a few manual refreshes can earn a one-hour
+  /// `Retry-After`. Three minutes is ample for windows that move slowly, and
+  /// leaves headroom for manual refreshes.
+  var refreshInterval: Double = 180
 
   /// Exact API field to read the Fable ring from, e.g. `seven_day_omelette`.
   ///
