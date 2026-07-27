@@ -281,8 +281,12 @@ that notarizes a Developer ID build is unavailable. For that you need a real
 App target:
 
 ```bash
-brew install xcodegen && xcodegen generate && open ClaudeUsageWidget.xcodeproj
+brew install xcodegen && DEVELOPMENT_TEAM=YOURTEAMID xcodegen generate && open ClaudeUsageWidget.xcodeproj
 ```
+
+Pass `DEVELOPMENT_TEAM` rather than setting the team in Xcode's UI. The UI
+writes it into the generated project, which the next `xcodegen generate`
+overwrites.
 
 `project.yml` is the source of truth; the `.xcodeproj` is generated and
 git-ignored, so it cannot drift from the sources or rot into an unreviewable
@@ -290,11 +294,38 @@ binary diff. Regenerate it whenever you add a file.
 
 ### Signing certificates: the iOS gotcha
 
-An **Apple Development** certificate is not enough. Those are for local and
-registered devices — an app signed with one is *blocked* on someone else's Mac.
-Distribution needs a **Developer ID Application** certificate, created in
-Xcode ▸ Settings ▸ Accounts ▸ Manage Certificates ▸ **+**, which requires the
-paid Apple Developer Program.
+Two certificate types look plausible here and only one works.
+
+| Certificate | What it is for | Works outside the store? |
+|---|---|---|
+| **Apple Development** | local builds, registered devices | no — blocked on other Macs |
+| **Apple Distribution** | App Store / TestFlight submissions | no — not a Gatekeeper identity |
+| **Developer ID Application** | direct distribution | **yes** |
+
+Coming from iOS, *Apple Distribution* is the trap: it is the certificate you
+already use for TestFlight, so it reads as the "release" one. It is not
+accepted for notarized direct distribution.
+
+Create a **Developer ID Application** certificate in Xcode ▸ Settings ▸
+Accounts ▸ Manage Certificates ▸ **+**. It requires the paid Apple Developer
+Program, and the option only appears if you are the **Account Holder** on the
+team.
+
+Verify you have the right one:
+
+```bash
+security find-identity -v -p codesigning | grep "Developer ID Application"
+```
+
+You can confirm the whole chain before ever archiving:
+
+```bash
+CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./Scripts/build-app.sh && spctl -a -vvv -t install dist/ClaudeUsageWidget.app
+```
+
+A correctly signed but not-yet-notarized app reports `rejected` with
+`source=Unnotarized Developer ID`. That is the expected result at that stage —
+it means everything except notarization is right.
 
 `Scripts/build-app.sh` deliberately prefers whatever certificate it finds for
 *local* builds — that is only about keeping Keychain grants stable across

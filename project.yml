@@ -66,8 +66,15 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: us.lucasleite.ClaudeUsageWidget
         PRODUCT_NAME: ClaudeUsageWidget
-        # Automatic signing picks up your Developer ID once the team is set in
-        # Xcode ▸ Signing & Capabilities. Leave DEVELOPMENT_TEAM unset here so
-        # the project does not hardcode one person's team.
+        # Setting the team in Xcode's UI writes it into the generated
+        # .xcodeproj, which `xcodegen generate` then overwrites. Take it from
+        # the environment instead, so it survives regeneration without this
+        # public repo hardcoding one person's team:
+        #
+        #     DEVELOPMENT_TEAM=YOURTEAMID xcodegen generate
+        #
+        # Or put it in a local .env-style shell profile. Empty is fine — Xcode
+        # will just ask you to pick a team.
+        DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
         CODE_SIGN_STYLE: Automatic
         COMBINE_HIDPI_IMAGES: YES
