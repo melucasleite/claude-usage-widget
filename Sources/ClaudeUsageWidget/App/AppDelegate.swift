@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var panel: WidgetPanel?
   private var statusItem: StatusItemController?
   private var settingsWindow: NSWindow?
+  private var onboardingWindow: NSWindow?
   private var cancellables = Set<AnyCancellable>()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -39,6 +40,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
       .store(in: &cancellables)
 
+    NotificationCenter.default.publisher(for: .openOnboarding)
+      .receive(on: RunLoop.main)
+      .sink { [weak self] _ in self?.openOnboarding() }
+      .store(in: &cancellables)
+
     NotificationCenter.default.publisher(for: .openSettings)
       .receive(on: RunLoop.main)
       .sink { [weak self] _ in self?.openSettings() }
@@ -55,6 +61,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       .store(in: &cancellables)
 
     coordinator.start()
+
+    // First run: bring the setup guide forward rather than leaving someone
+    // staring at a widget that cannot show anything yet.
+    if !CredentialStore.hasToken { openOnboarding() }
   }
 
   func applicationWillTerminate(_ notification: Notification) {
@@ -121,6 +131,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     } else {
       panel.orderFrontRegardless()
     }
+  }
+
+  private func openOnboarding() {
+    if let onboardingWindow {
+      onboardingWindow.makeKeyAndOrderFront(nil)
+      NSApp.activate(ignoringOtherApps: true)
+      return
+    }
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 520, height: 560),
+      styleMask: [.titled, .closable], backing: .buffered, defer: false)
+    window.title = "Set Up Claude Usage Widget"
+    window.contentView = NSHostingView(
+      rootView: OnboardingView(coordinator: coordinator) { [weak self] in
+        self?.onboardingWindow?.close()
+      })
+    window.center()
+    window.isReleasedWhenClosed = false
+    window.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
+    onboardingWindow = window
   }
 
   private func openSettings() {

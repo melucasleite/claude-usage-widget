@@ -100,7 +100,7 @@ struct RingView: View {
   let progress: Double
 
   private var color: Color { datum.metric.color }
-  private var isUnavailable: Bool { datum.provenance == .unavailable }
+  private var isUnavailable: Bool { !datum.isAvailable }
 
   private var value: Double { max(0, progress) }
   /// Whether the ring has been round at least once.
@@ -150,9 +150,6 @@ struct RingView: View {
         }
       }
     }
-    // Dashed look for estimated values, so live vs. estimated is visible
-    // without reading any text.
-    .opacity(datum.provenance == .estimated ? 0.85 : 1.0)
   }
 
   /// The sweep must return to its starting colour, or the 360°→0° wrap shows

@@ -41,7 +41,9 @@ actor OAuthUsageProvider {
   }
 
   func fetch() async throws -> UsageWindows {
-    let creds = try CredentialStore.load()
+    guard let creds = CredentialStore.load() else {
+      throw CredentialStore.CredentialError.notFound
+    }
 
     var request = URLRequest(url: Self.endpoint)
     request.httpMethod = "GET"

@@ -89,10 +89,8 @@ final class StatusItemController {
     for ring in snapshot.ordered(by: configStore.config.visibleMetrics) {
       var line = "\(ring.metric.title)  \(ring.percentText)"
       if let reset = ring.resetText() { line += "  · resets in \(reset)" }
-      if ring.provenance == .estimated { line += "  · est." }
       let item = NSMenuItem(title: line, action: nil, keyEquivalent: "")
       item.image = swatch(ring.metric.color)
-      if let detail = ring.detail { item.toolTip = detail }
       menu.addItem(item)
     }
 
@@ -145,7 +143,7 @@ final class StatusItemController {
     settings.target = self
     menu.addItem(settings)
 
-    if let message = snapshot.liveSourceStatus.message {
+    if let message = snapshot.status.message {
       let status = NSMenuItem(title: message, action: nil, keyEquivalent: "")
       status.isEnabled = false
       menu.addItem(.separator())

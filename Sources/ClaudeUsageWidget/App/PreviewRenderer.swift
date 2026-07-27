@@ -4,11 +4,10 @@ import SwiftUI
 /// Offscreen renderer for documentation images and for eyeballing the rings
 /// without launching the full app.
 ///
-///     ClaudeUsageWidget --render-preview docs/rings.png [--demo]
+///     ClaudeUsageWidget --render-preview docs/rings.png
 ///
-/// With `--demo` it uses fixed, representative values so the output is stable
-/// and contains none of your real numbers — which is what the README image is
-/// generated from. Without it, it renders whatever your current usage is.
+/// Uses fixed, representative values, so the README image is stable and
+/// contains nobody's real numbers.
 @MainActor
 enum PreviewRenderer {
 
@@ -16,61 +15,24 @@ enum PreviewRenderer {
     let args = CommandLine.arguments
     guard let flagIndex = args.firstIndex(of: "--render-preview") else { return false }
     let outPath = args.indices.contains(flagIndex + 1) ? args[flagIndex + 1] : "preview.png"
-    let demo = args.contains("--demo")
-
-    let rings = demo ? demoRings() : liveRingsBestEffort()
-    render(rings: rings, to: URL(fileURLWithPath: outPath))
+    render(rings: demoRings(), to: URL(fileURLWithPath: outPath))
     return true
   }
 
   /// Fixed values chosen to exercise every visual state at once: a normal
-  /// ring, a nearly-full ring, an over-limit ring that draws a second lap,
-  /// and an estimated (dimmed) ring.
+  /// ring, a nearly-full one, and an over-limit one drawing a second lap.
   static func demoRings() -> [RingDatum] {
     let now = Date()
     return [
       RingDatum(
         metric: .fiveHour, progress: 0.62,
-        resetsAt: now.addingTimeInterval(2 * 3600 + 14 * 60),
-        provenance: .live, detail: "62.0% of limit"),
+        resetsAt: now.addingTimeInterval(3600), isAvailable: true),
       RingDatum(
         metric: .weekly, progress: 0.94,
-        resetsAt: now.addingTimeInterval(3 * 86_400),
-        provenance: .estimated, detail: "~$4,180 of ~$4,447 (learned quota)"),
+        resetsAt: now.addingTimeInterval(3 * 86_400), isAvailable: true),
       RingDatum(
         metric: .fable, progress: 1.18,
-        resetsAt: now.addingTimeInterval(4 * 86_400),
-        provenance: .live, detail: "118.0% of limit"),
-    ]
-  }
-
-  /// Best-effort real data: reads local transcripts only, so this never needs
-  /// credentials and never blocks on the network.
-  static func liveRingsBestEffort() -> [RingDatum] {
-    let config = Config.load()
-    let provider = TranscriptProvider()
-    let semaphore = DispatchSemaphore(value: 0)
-    var totals = TranscriptProvider.Totals()
-
-    Task.detached {
-      totals = (try? await provider.refresh()) ?? TranscriptProvider.Totals()
-      semaphore.signal()
-    }
-    _ = semaphore.wait(timeout: .now() + 20)
-
-    func ring(_ metric: RingMetric, _ spent: Double, _ budget: Double) -> RingDatum {
-      RingDatum(
-        metric: metric,
-        progress: budget > 0 ? spent / budget : 0,
-        resetsAt: nil,
-        provenance: .estimated,
-        detail: String(format: "~$%.2f of $%.0f", spent, budget))
-    }
-
-    return [
-      ring(.fiveHour, totals.fiveHourUSD, config.estimatedFiveHourBudgetUSD),
-      ring(.weekly, totals.sevenDayUSD, config.estimatedWeeklyBudgetUSD),
-      ring(.fable, totals.fableSevenDayUSD, config.estimatedFableBudgetUSD),
+        resetsAt: now.addingTimeInterval(3600), isAvailable: true),
     ]
   }
 
@@ -121,9 +83,7 @@ enum PreviewRenderer {
                 Text(ring.percentText)
                   .font(.system(size: 11, weight: .semibold, design: .rounded))
                   .monospacedDigit()
-                  .foregroundStyle(
-                    ring.provenance == .estimated
-                      ? .white.opacity(0.5) : .white)
+                  .foregroundStyle(.white)
               }
             }
           }

@@ -3,36 +3,32 @@ import SwiftUI
 
 // MARK: - Metrics
 
-/// The four things this widget can draw a ring for.
-///
-/// `RingMetric` is deliberately a closed enum: each case knows how to describe
-/// itself, which keeps the UI layer free of string matching.
+/// The three limits a Max plan actually exposes.
 enum RingMetric: String, Codable, CaseIterable, Identifiable, Sendable {
-  case fable
   case fiveHour
   case weekly
+  case fable
 
   var id: String { rawValue }
 
   var title: String {
     switch self {
-    case .fable: return "Fable"
     case .fiveHour: return "5-Hour"
     case .weekly: return "Weekly"
+    case .fable: return "Fable"
     }
   }
 
-  /// Longer description, used in tooltips and the settings pane.
   var subtitle: String {
     switch self {
-    case .fable: return "Fable model usage this week"
     case .fiveHour: return "Rolling 5-hour session window"
-    case .weekly: return "7-day rolling limit"
+    case .weekly: return "7-day rolling limit, all models"
+    case .fable: return "Weekly Fable-model limit"
     }
   }
 
-  /// Apple-Activity-inspired palette. Each ring gets a hue far enough from
-  /// its neighbours to stay legible at small diameters.
+  /// Apple-Activity-inspired palette, spaced far enough apart to stay legible
+  /// at small diameters.
   var color: Color {
     switch self {
     case .fiveHour: return Color(hex: 0xFF375F)  // Move red
@@ -41,47 +37,51 @@ enum RingMetric: String, Codable, CaseIterable, Identifiable, Sendable {
     }
   }
 
-  /// Default outer-to-inner ordering. The most urgent window sits outermost
-  /// where it is largest and easiest to read at a glance.
+  /// The API field this ring reads. Per-model windows use internal codenames
+  /// rather than public model names, so Fable resolves by lookup rather than a
+  /// literal key. See `UsageWindows.modelCodenames`.
+  var apiKey: String? {
+    switch self {
+    case .fiveHour: return "five_hour"
+    case .weekly: return "seven_day"
+    case .fable: return nil  // resolved by codename
+    }
+  }
+
+  /// Outer to inner. The most urgent window sits outermost, where it is
+  /// largest and easiest to read at a glance.
   static let defaultOrder: [RingMetric] = [.fiveHour, .weekly, .fable]
 }
 
 // MARK: - Ring data
 
-/// A single ring's worth of resolved state, ready to render.
+/// One ring's resolved state.
+///
+/// Every value here comes from Anthropic's usage endpoint. There is no local
+/// estimation: when a number is not available, the ring says so rather than
+/// substituting a guess.
 struct RingDatum: Identifiable, Equatable, Sendable {
   let metric: RingMetric
-  /// Fraction of the limit consumed. 1.0 == exactly at the limit. Values
-  /// above 1.0 are legal and render as an overlapping second lap.
+  /// Fraction of the limit consumed. 1.0 is exactly at the limit; values above
+  /// are legal and draw as an overlapping second lap.
   let progress: Double
-  /// When this window rolls over, if known.
+  /// When this window rolls over, if the API said.
   let resetsAt: Date?
-  /// Where the number came from, so the UI can be honest about it.
-  let provenance: Provenance
-  /// Optional human-readable detail (e.g. "$41.20 of $200").
-  let detail: String?
+  /// False when we have no reading — no token yet, or the field was absent.
+  let isAvailable: Bool
 
   var id: String { metric.rawValue }
 
-  enum Provenance: String, Equatable, Sendable {
-    /// Authoritative percentage straight from Anthropic's usage endpoint.
-    case live
-    /// Derived locally by summing tokens in ~/.claude/projects transcripts.
-    case estimated
-    /// No data available for this metric.
-    case unavailable
-  }
-
   var percentText: String {
-    guard provenance != .unavailable else { return "—" }
+    guard isAvailable else { return "—" }
     let percent = (progress * 100).rounded()
-    // Past a point the exact figure stops being information and starts
-    // being a wall of digits inside a small circle.
+    // Past a point the exact figure stops being information and starts being
+    // a wall of digits inside a small circle.
     if percent >= 1000 { return "999+%" }
     return "\(Int(percent))%"
   }
 
-  /// Countdown string like "2h 14m" until the window resets.
+  /// Countdown until the window resets, e.g. "2h 14m".
   func resetText(now: Date = Date()) -> String? {
     guard let resetsAt, resetsAt > now else { return nil }
     let seconds = Int(resetsAt.timeIntervalSince(now))
@@ -94,8 +94,7 @@ struct RingDatum: Identifiable, Equatable, Sendable {
   }
 
   static func unavailable(_ metric: RingMetric) -> RingDatum {
-    RingDatum(
-      metric: metric, progress: 0, resetsAt: nil, provenance: .unavailable, detail: nil)
+    RingDatum(metric: metric, progress: 0, resetsAt: nil, isAvailable: false)
   }
 }
 
@@ -105,37 +104,36 @@ struct RingDatum: Identifiable, Equatable, Sendable {
 struct UsageSnapshot: Equatable, Sendable {
   var rings: [RingMetric: RingDatum] = [:]
   var lastUpdated: Date?
-  var liveSourceStatus: SourceStatus = .unknown
-  var localSourceStatus: SourceStatus = .unknown
-  /// True once at least one window has learned a real quota from a live
-  /// reading, so offline fallback can produce meaningful percentages.
-  var isCalibrated: Bool = false
+  var status: Status = .needsToken
 
-  enum SourceStatus: Equatable, Sendable {
-    case unknown
+  /// What the widget should be showing right now.
+  enum Status: Equatable, Sendable {
+    /// No credential stored — show onboarding, not rings.
+    case needsToken
+    /// Live data in hand.
     case ok
+    /// Had a credential, but the last fetch failed.
     case failed(String)
-
-    var isOK: Bool { self == .ok }
 
     var message: String? {
       if case .failed(let m) = self { return m }
       return nil
     }
+
+    var hasData: Bool { self != .needsToken }
   }
 
   static let empty = UsageSnapshot()
 
-  /// Ordered rings for rendering, filtered to those the user enabled.
   func ordered(by order: [RingMetric]) -> [RingDatum] {
     order.map { rings[$0] ?? .unavailable($0) }
   }
 
-  /// The ring closest to (or furthest past) its limit — used for the menu bar
-  /// glyph and the number in the middle of the widget.
+  /// The ring closest to (or furthest past) its limit — drives the menu bar
+  /// glyph and the number in the middle.
   func mostUrgent(among order: [RingMetric]) -> RingDatum? {
     ordered(by: order)
-      .filter { $0.provenance != .unavailable }
+      .filter(\.isAvailable)
       .max { $0.progress < $1.progress }
   }
 }

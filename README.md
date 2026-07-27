@@ -27,8 +27,8 @@
 
 Open the `.dmg` and drag the app across to Applications.
 
-Requires macOS 14+ and Claude Code signed in on your own machine: the widget
-reads *your* credentials and *your* transcripts, never anyone else's.
+Requires macOS 14+ and a Claude subscription. On first launch it walks you
+through generating a token — the widget reads *your* limits, nobody else's.
 
 To keep it around permanently, add it under System Settings ▸ General ▸
 Login Items.
@@ -120,169 +120,90 @@ none of anyone's real numbers.
 
 ## How it gets the data
 
-Two independent sources, because the good one is undocumented and the reliable
-one is imprecise.
-
-### 1. Live endpoint (preferred)
-
-`GET https://api.anthropic.com/api/oauth/usage` — the same endpoint `/usage`
-inside Claude Code talks to. It returns exact percentages:
+One source: `GET https://api.anthropic.com/api/oauth/usage` — the same endpoint
+`/usage` inside Claude Code talks to. It returns exact percentages:
 
 ```json
 {
-  "five_hour":        { "utilization": 30.0, "resets_at": "..." },
-  "seven_day":        { "utilization": 47.0, "resets_at": "..." },
-  "seven_day_omelette": null,
-  "seven_day_opus":     null
+  "five_hour":          { "utilization": 30.0, "resets_at": "..." },
+  "seven_day":          { "utilization": 47.0, "resets_at": "..." },
+  "seven_day_omelette": null
 }
 ```
 
-This is **unofficial and undocumented** and may change or vanish without
-notice. Two things are worth knowing if you build something similar:
+There is deliberately **no local estimation**. An earlier version derived
+percentages from transcript token counts when the API was unreachable, which
+meant inventing a denominator — a Max plan's quotas are not published — and it
+once confidently displayed **3704%**. A ring that says "—" is more useful than
+one that says something false, so unavailable data now stays unavailable.
+
+This endpoint is **unofficial and undocumented**. Three things are worth
+knowing if you build something similar:
 
 - The `User-Agent: claude-code/<version>` header is not optional in practice.
   Without it you land in an aggressively rate-limited bucket and get persistent
   `429`s.
 - **Per-model windows use internal codenames, not model names.** There is no
   `seven_day_fable`. A live response carries `seven_day_omelette` alongside
-  decoys like `cinder_cove`, `nimbus_quill` and `iguana_necktie`. The Fable ring
-  is mapped to `seven_day_omelette` by matching a live response against what
-  Claude Code's own `/usage` displayed — an **inference, not a documented
-  contract**. Pin a different key in Settings → Data if it ever moves.
+  decoys like `cinder_cove`, `nimbus_quill` and `iguana_necktie`. The mapping
+  here is inferred by matching a live response against what `/usage` displayed
+  — an inference, not a contract. Pin a different key in Settings if it moves.
 - **`null` means 0%, not "unavailable".** A per-model key that is present but
-  null means the window applies to your account with no usage yet — which is
-  exactly how `/usage` renders it. Treating null as missing is what keeps an
-  idle Fable ring dark when it should read 0%.
-- The response is otherwise decoded by *shape* rather than a hardcoded key
-  list, so new windows appear without a code change.
+  null means the window applies to your account with no usage yet, which is
+  how `/usage` renders it.
 
-### 2. Local transcripts (fallback)
+### Rate limiting
 
-Claude Code already writes every response's token usage to
-`~/.claude/projects/**/*.jsonl`. Parsing those needs **no credentials at all**,
-so the widget keeps working when the token is stale or the endpoint moves.
+The endpoint is limited more tightly than it looks. The widget polls every
+three minutes by default and enforces a floor between calls regardless of what
+asks, because the timer is not the only caller.
 
-Two details make it cheap enough to run every minute:
+Backoff is **persisted to disk**. Keeping it in memory quietly defeats it:
+quitting and reopening resets the timer and fires a request immediately, so a
+handful of relaunches can turn a short `Retry-After` into an hour-long one.
+`--check` honours the same wait and needs `--force` to override.
 
-- **Incremental tailing.** Per-file byte offsets are persisted, so a refresh
-  parses only bytes appended since last time, and a partially-written trailing
-  line is left for the next pass.
-- **Deduplication by request ID.** The same billable response legitimately
-  appears more than once in the transcripts. Without dedup, every window
-  double-counts.
+## Authentication
 
-### The calibration trick
-
-Locally we know exactly what your usage *cost* at list prices. What we cannot
-know is the denominator — a Max plan's quotas are not published, and they are
-emphatically not the subscription price.
-
-Guessing is worse than useless here. An early version of this widget divided a
-real weekly cost by a plausible-looking `$120` budget and proudly displayed
-**3704%**.
-
-So it does not guess. Whenever the live endpoint answers, both halves of the
-equation are in hand at the same instant:
-
-```
-utilization = 47%      (authoritative, from the API)
-window cost = $2,090   (computed locally from transcripts)
-⇒ implied full quota ≈ $2,090 / 0.47 ≈ $4,447
-```
-
-That implied quota is smoothed, persisted, and reused as the denominator the
-next time the endpoint is unreachable. Until a window has been calibrated at
-least once, that ring reports *unknown* rather than inventing a number.
-
-You can override any denominator manually in Settings → Data.
-
-## Credentials and security
-
-The app reads the Claude OAuth token that Claude Code already stores on your
-machine. It is worth being precise about what that does and does not involve:
-
-- The token is **read** via `/usr/bin/security`, falling back to
-  `~/.claude/.credentials.json` and then the Keychain API. It is never written
-  anywhere by this app — not to its config, not to logs, not to disk.
-- `OAuthCredentials` overrides `description` and `debugDescription` to print
-  `<redacted>`, so interpolating one into a log line cannot leak it. There is a
-  unit test asserting this, specifically so that deleting the redaction turns
-  the build red.
-- The diagnostic command prints token *metadata* only — length, expiry — never
-  a value.
-- **No credential of any kind is committed to this repository**, and
-  `.gitignore` blocks the usual shapes as a backstop.
-
-Claude Code does not use one fixed Keychain service name. It builds one:
-
-```
-"Claude Code" + <build-channel suffix> + "-credentials" + <config-dir hash>
-```
-
-where the trailing hash is present only when `CLAUDE_CONFIG_DIR` is set. So the
-app discovers the name by pattern instead of hardcoding a spelling that is
-right on some machines and wrong on others.
-
-### Why `/usr/bin/security` comes first
-
-Keychain access is granted per *application*, and Claude Code creates its
-credential item by shelling out to `security add-generic-password` — which puts
-`/usr/bin/security` on that item's access-control list. Reading through the
-same tool is therefore silent, while calling `SecItemCopyMatching` from this app
-is a different binary asking for someone else's item, which is exactly what
-macOS puts a dialog in front of.
-
-Related: those grants are bound to the app's **code identity**. An ad-hoc
-signature changes identity on every rebuild, so "Always Allow" is invalidated
-each time you rebuild — the classic "I keep allowing it and it never sticks".
-The build script therefore signs with a real certificate when one exists
-(any Apple Development cert; nothing here is distributed), which keeps the
-grant stable across rebuilds:
-
-```bash
-CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./Scripts/build-app.sh
-```
-
-### Why not an API key?
-
-`ANTHROPIC_API_KEY` does not help here and would report the wrong thing. The
-usage endpoint reports *subscription* limits — the Max plan's 5-hour, weekly
-and per-model windows. An API key authenticates a separate pay-as-you-go
-billing path; it is not accepted by this OAuth-scoped endpoint, and API console
-spend has no relationship to your plan's quotas.
-
-### The durable fix: a long-lived token
-
-Claude Code's stored token expires every few hours, and the desktop app does
-not always write refreshes back to the Keychain — so the widget periodically
-loses access through no fault of its own. If that keeps happening:
+A single long-lived token from `claude setup-token`, pasted once:
 
 ```bash
 claude setup-token
 ```
 
-Paste the result into **Settings ▸ Data ▸ Long-lived token**. It goes into a
-Keychain item this app creates, which means reading it never prompts, and it
-is never written to config or logs.
+The app opens a setup guide on first run — generate, paste, save, test. The
+test step actually calls the API, because "saved" is not the same as "works".
 
-`CLAUDE_CODE_OAUTH_TOKEN` is also honoured, but only when the app is launched
-from a shell — opening it from Finder inherits no environment, which is why
-pasting it into Settings exists at all.
+Claude Code's own stored token is deliberately **not** used. It expires every
+few hours and is not reliably refreshed on disk, so a widget reading it goes
+dark several times a day for reasons you cannot see or fix. It also sits behind
+a Keychain access-control prompt that every rebuild invalidates.
 
-Credential resolution order: this app's long-lived token, then
-`CLAUDE_CODE_OAUTH_TOKEN`, then Claude Code's own Keychain item via
-`/usr/bin/security`, then `~/.claude/.credentials.json`, then the Keychain API.
+`CLAUDE_CODE_OAUTH_TOKEN` is honoured too, but only when the app is launched
+from a shell — an app opened from Finder inherits no environment, which is why
+the paste field exists at all.
 
-### If the widget shows no live data
+### Security
 
-The most common cause is a stale Keychain token. Claude Code refreshes tokens
-in memory and does not always write the new value back, and the desktop app
-keeps a separate session from the CLI. Run `claude` once in a terminal to
-refresh the stored credential, then hit Refresh in the widget.
+- The token is written only when you paste one in, and only to the Keychain:
+  never to `config.json`, never to logs, never to disk in the clear.
+- It lives in a Keychain item **this app creates**. An application always has
+  access to its own items, so reading it never prompts.
+- Stored device-only and after-first-unlock: no iCloud sync, unreadable while
+  the Mac is locked.
+- `OAuthCredentials` prints `<redacted>`, so interpolating one into a log line
+  cannot leak it. A unit test asserts this, so removing the redaction turns the
+  build red.
+- No credential of any kind is in this repository.
 
-Note that an expired-looking `expiresAt` is deliberately *not* treated as fatal
-— the app tries the request anyway and lets the server be the authority, since
-a local timestamp is often wrong in the safe direction.
+### Diagnostics
+
+```bash
+./dist/ClaudeUsageWidget.app/Contents/MacOS/ClaudeUsageWidget --check
+```
+
+Reports where the token came from, whether the endpoint answered, and which
+rings resolved. It never prints a token value.
 
 ## Architecture
 
@@ -290,7 +211,7 @@ a local timestamp is often wrong in the safe direction.
 Sources/ClaudeUsageWidget/
 ├── main.swift                  entry point; --check and --render-preview
 ├── App/
-│   ├── AppDelegate.swift       wiring, settings window
+│   ├── AppDelegate.swift       wiring, windows, main menu
 │   ├── WidgetPanel.swift       borderless non-activating NSPanel
 │   ├── StatusItemController.swift
 │   ├── Diagnostics.swift       --check
@@ -299,27 +220,19 @@ Sources/ClaudeUsageWidget/
 │   ├── Models.swift            RingMetric, RingDatum, UsageSnapshot
 │   └── Config.swift            settings, persisted as JSON
 ├── Data/
-│   ├── CredentialStore.swift   Keychain discovery + redaction
-│   ├── OAuthUsageProvider.swift
-│   ├── TranscriptProvider.swift
-│   ├── Calibration.swift       learns real quotas from live readings
-│   ├── Pricing.swift           per-model rates, user-overridable
-│   └── UsageCoordinator.swift  merges sources, backs off on 429
+│   ├── CredentialStore.swift   Keychain, token sanitising, redaction
+│   ├── OAuthUsageProvider.swift  the endpoint and its tolerant decoder
+│   └── UsageCoordinator.swift  refresh loop, persisted backoff
 └── UI/
     ├── ActivityRingsView.swift adaptive geometry, overflow laps
-    ├── WidgetView.swift
+    ├── WidgetView.swift        rings, or the setup prompt
+    ├── OnboardingView.swift    generate → paste → save → test
     └── SettingsView.swift
 ```
 
-Settings, calibration, the transcript index and any pricing overrides live in
-`~/Library/Application Support/ClaudeUsageWidget/`.
-
-Prices can be overridden without rebuilding — drop a `pricing.json` in that
-directory:
-
-```json
-{ "claude-opus-5": { "input": 15, "output": 75, "cacheWrite": 18.75, "cacheRead": 1.5 } }
-```
+Settings and rate-limit state live in
+`~/Library/Application Support/ClaudeUsageWidget/`. The token does not — it is
+in the Keychain.
 
 ## Distribution
 
@@ -472,8 +385,8 @@ context that counts.
 The repository is public and `./Scripts/build-app.sh` works from a clean clone.
 For a technical friend that is zero cost and no Apple paperwork.
 
-Either way, the widget is only useful to someone who has Claude Code signed in
-on their own machine — it reads *their* credentials and *their* transcripts,
+Either way, the widget is only useful to someone with their own Claude
+subscription: it reads their limits using a token they generate themselves,
 never yours.
 
 ## Tests
@@ -482,19 +395,17 @@ never yours.
 swift test
 ```
 
-Covers the parts that fail quietly: tolerant decoding of the usage payload
-(including unknown and renamed model windows), credential envelope parsing,
-token redaction, longest-prefix price matching, and ring formatting including
-the over-100% case.
+Covers the parts that fail quietly: decoding a payload whose key names are not
+guaranteed, resolving Fable through a codename, treating a null model window as
+0%, stripping whitespace from a terminal-wrapped token, token redaction, ring
+hit-testing, and the rule that cosmetic settings never trigger a network call.
 
 ## Caveats
 
-- The usage endpoint is unofficial. If it changes, the live rings go quiet and
-  the local estimator carries on.
-- Local cost figures are list-price approximations used for *ratios*, not
-  billing. They are not what you are charged.
-- Only `.app`-bundle builds get a stable ad-hoc signature; rebuilding from a
-  different path may re-prompt for Keychain access.
+- The usage endpoint is unofficial. If it changes, the rings go quiet and say
+  so — there is no fallback that invents numbers.
+- The Fable codename mapping is inferred from observation, not documented.
+- Requires a Claude subscription with usage limits to report.
 
 ## License
 

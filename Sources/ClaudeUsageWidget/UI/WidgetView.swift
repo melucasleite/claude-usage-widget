@@ -1,21 +1,16 @@
 import SwiftUI
 
-/// The contents of the floating widget: the ring stack, an optional centre
-/// readout, and an optional legend.
+/// The contents of the floating widget.
+///
+/// Two states, deliberately: rings, or a prompt to set a token. There is no
+/// third state where empty rings sit there implying zero usage — an empty ring
+/// and "no data" look identical at a glance, and only one of them is true.
 ///
 /// ## Which ring the centre shows
 ///
-/// Three inputs, in descending priority:
-///
-/// 1. **Hover** — pointing at a ring previews it immediately, and reverts the
-///    moment you leave. Nothing is committed.
-/// 2. **Pinned** — clicking a ring pins it; clicking it again unpins. Survives
-///    relaunch.
-/// 3. **Most urgent** — the default, whichever ring is closest to its limit.
-///
-/// Reset countdowns deliberately live in the tooltip rather than on the face:
-/// the widget is glanced at, and a number that only matters when you are
-/// already worried does not earn permanent space.
+/// 1. **Hover** — pointing at a ring previews it, and reverts on exit.
+/// 2. **Pinned** — clicking a ring pins it; clicking again unpins.
+/// 3. **Most urgent** — the default, whichever is closest to its limit.
 struct WidgetView: View {
   @ObservedObject var coordinator: UsageCoordinator
   @ObservedObject var configStore: ConfigStore
@@ -25,21 +20,19 @@ struct WidgetView: View {
 
   private var config: Config { configStore.config }
   private var rings: [RingDatum] { coordinator.snapshot.ordered(by: config.visibleMetrics) }
+  private var needsToken: Bool { coordinator.snapshot.status == .needsToken }
 
-  /// Clear space inside the innermost ring — the budget the centre readout
-  /// has to fit into. Uses the same adaptive thickness the rings are drawn
-  /// with, so the two cannot drift apart.
+  /// Clear space inside the innermost ring, using the same adaptive thickness
+  /// the rings are drawn with so the two cannot drift apart.
   private var innerDiameter: Double {
     let side = config.widgetSize
     let t = ActivityRingsView.effectiveThickness(
       side: side, count: rings.count,
       requested: config.ringThickness, spacing: config.ringSpacing)
     let n = Double(rings.count)
-    let consumed = 2 * ((n - 1) * (t + config.ringSpacing) + t)
-    return max(28, side - consumed)
+    return max(28, side - 2 * ((n - 1) * (t + config.ringSpacing) + t))
   }
 
-  /// The ring the centre readout is currently showing.
   private var focused: RingDatum? {
     if let hoveredMetric { return datum(for: hoveredMetric) }
     if let pinned = config.pinnedMetric, config.visibleMetrics.contains(pinned) {
@@ -48,9 +41,7 @@ struct WidgetView: View {
     return coordinator.snapshot.mostUrgent(among: config.visibleMetrics)
   }
 
-  private var isPinned: Bool {
-    hoveredMetric == nil && config.pinnedMetric != nil
-  }
+  private var isPinned: Bool { hoveredMetric == nil && config.pinnedMetric != nil }
 
   private func datum(for metric: RingMetric) -> RingDatum {
     coordinator.snapshot.rings[metric] ?? .unavailable(metric)
@@ -58,56 +49,95 @@ struct WidgetView: View {
 
   var body: some View {
     VStack(spacing: 10) {
-      ZStack {
-        ActivityRingsView(
-          rings: rings,
-          thickness: config.ringThickness,
-          spacing: config.ringSpacing
-        )
-        if config.showCenterReadout { centerReadout }
+      if needsToken {
+        setupPrompt
+      } else {
+        ringStack
+        if config.showLegend { legend }
       }
-      .frame(width: config.widgetSize, height: config.widgetSize)
-      .contentShape(Rectangle())
-      .onContinuousHover { phase in
-        switch phase {
-        case .active(let point):
-          hoveredMetric = metric(at: point)
-        case .ended:
-          hoveredMetric = nil
-        }
-      }
-      // A tap needs no coordinates of its own — whatever is hovered is what
-      // was clicked. Clicking the pinned ring again releases it.
-      .onTapGesture {
-        guard let target = hoveredMetric else { return }
-        configStore.config.pinnedMetric = (config.pinnedMetric == target) ? nil : target
-      }
-
-      if config.showLegend { legend }
     }
     .padding(config.showBackground ? 16 : 4)
     .background(background)
     .overlay(alignment: .topLeading) { if hovering { closeButton } }
-    .overlay(alignment: .topTrailing) { if hovering { controls } }
+    .overlay(alignment: .topTrailing) { if hovering && !needsToken { controls } }
     .opacity(config.opacity)
     .onHover { hovering = $0 }
-    .help(tooltip)
+    .help(needsToken ? "Set up a token to start showing usage" : tooltip)
   }
 
-  /// Maps a point in the ring stack to the metric drawn there.
+  // MARK: First run
+
+  /// Shown until a token exists. Says what is missing and offers the one
+  /// action that fixes it, rather than three empty rings that read as "you
+  /// have used nothing".
+  private var setupPrompt: some View {
+    VStack(spacing: 12) {
+      ZStack {
+        Circle()
+          .strokeBorder(
+            style: StrokeStyle(lineWidth: 6, dash: [7, 7])
+          )
+          .foregroundStyle(.secondary.opacity(0.35))
+        Image(systemName: "key.fill")
+          .font(.system(size: config.widgetSize * 0.16, weight: .medium))
+          .foregroundStyle(Color(hex: 0xFF375F))
+      }
+      .frame(width: config.widgetSize * 0.62, height: config.widgetSize * 0.62)
+
+      VStack(spacing: 3) {
+        Text("Token needed")
+          .font(.system(size: 14, weight: .semibold, design: .rounded))
+        Text("to read your usage limits")
+          .font(.system(size: 11, design: .rounded))
+          .foregroundStyle(.secondary)
+      }
+
+      Button {
+        NotificationCenter.default.post(name: .openOnboarding, object: nil)
+      } label: {
+        Label("Set up", systemImage: "gearshape.fill")
+          .font(.system(size: 12, weight: .medium))
+          .padding(.horizontal, 12).padding(.vertical, 6)
+      }
+      .buttonStyle(.borderedProminent)
+      .tint(Color(hex: 0xFF375F))
+    }
+    .frame(width: config.widgetSize)
+    .padding(.vertical, 6)
+  }
+
+  // MARK: Rings
+
+  private var ringStack: some View {
+    ZStack {
+      ActivityRingsView(
+        rings: rings, thickness: config.ringThickness, spacing: config.ringSpacing)
+      if config.showCenterReadout { centerReadout }
+    }
+    .frame(width: config.widgetSize, height: config.widgetSize)
+    .contentShape(Rectangle())
+    .onContinuousHover { phase in
+      switch phase {
+      case .active(let point): hoveredMetric = metric(at: point)
+      case .ended: hoveredMetric = nil
+      }
+    }
+    // A tap needs no coordinates of its own — whatever is hovered is what was
+    // clicked. Clicking the pinned ring again releases it.
+    .onTapGesture {
+      guard let target = hoveredMetric else { return }
+      configStore.config.pinnedMetric = (config.pinnedMetric == target) ? nil : target
+    }
+  }
+
   private func metric(at point: CGPoint) -> RingMetric? {
     guard
       let index = ActivityRingsView.ringIndex(
-        at: point,
-        side: config.widgetSize,
-        count: rings.count,
-        requested: config.ringThickness,
-        spacing: config.ringSpacing)
+        at: point, side: config.widgetSize, count: rings.count,
+        requested: config.ringThickness, spacing: config.ringSpacing)
     else { return nil }
     return rings.indices.contains(index) ? rings[index].metric : nil
   }
-
-  // MARK: Pieces
 
   @ViewBuilder
   private var background: some View {
@@ -147,11 +177,8 @@ struct WidgetView: View {
       }
       .lineLimit(1)
       .minimumScaleFactor(0.4)
-      // Keep the readout inside the innermost ring rather than letting a
-      // wide number spill over the bands.
       .frame(maxWidth: innerDiameter * 0.82)
       .animation(.easeOut(duration: 0.18), value: focused.metric)
-      // Let clicks and hovers reach the rings underneath.
       .allowsHitTesting(false)
     }
   }
@@ -161,13 +188,11 @@ struct WidgetView: View {
       ForEach(rings) { ring in
         HStack(spacing: 6) {
           Circle().fill(ring.metric.color).frame(width: 7, height: 7)
-          Text(ring.metric.title)
-            .font(.system(size: 10, weight: .medium, design: .rounded))
+          Text(ring.metric.title).font(.system(size: 10, weight: .medium, design: .rounded))
           Spacer(minLength: 10)
           Text(ring.percentText)
             .font(.system(size: 10, weight: .semibold, design: .rounded))
             .monospacedDigit()
-            .foregroundStyle(ring.provenance == .estimated ? .secondary : .primary)
         }
         .contentShape(Rectangle())
         .onHover { hoveredMetric = $0 ? ring.metric : nil }
@@ -180,16 +205,11 @@ struct WidgetView: View {
     .frame(width: config.widgetSize)
   }
 
-  /// Hover-revealed close, mirroring the controls on the right.
-  ///
-  /// This quits the app outright rather than hiding it. Not the usual macOS
-  /// reading of a close button, but the right one here: the widget *is* the
-  /// app, so leaving a menu bar item behind after you dismissed the only thing
-  /// you can see reads as not having closed. Hiding is still available from
-  /// the menu for anyone who wants it.
-  ///
-  /// No confirmation — relaunching costs one click, and nothing is lost:
-  /// settings persist on every change and the transcript index is on disk.
+  // MARK: Controls
+
+  /// Quits outright rather than hiding. The widget *is* the app, so leaving a
+  /// menu bar item behind after dismissing the only visible thing does not
+  /// read as having closed it. Hiding is still in the menu.
   private var closeButton: some View {
     Button {
       NSApplication.shared.terminate(nil)
@@ -205,8 +225,6 @@ struct WidgetView: View {
     .padding(6)
   }
 
-  /// Small hover-revealed refresh/settings affordances, so the widget stays
-  /// clean when you are not touching it.
   private var controls: some View {
     HStack(spacing: 6) {
       Button {
@@ -232,32 +250,24 @@ struct WidgetView: View {
   }
 
   /// Hovering a ring narrows the tooltip to that ring, with its reset time.
-  /// Otherwise it lists everything.
   private var tooltip: String {
     func describe(_ ring: RingDatum) -> String {
       var line = "\(ring.metric.title): \(ring.percentText)"
       if let reset = ring.resetText() { line += " · resets in \(reset)" }
-      if let detail = ring.detail { line += "\n\(detail)" }
-      if ring.provenance == .estimated { line += " · estimated" }
       return line
     }
-
     if let hoveredMetric {
-      var text = describe(datum(for: hoveredMetric))
-      text +=
-        config.pinnedMetric == hoveredMetric
-        ? "\n\nClick to unpin" : "\n\nClick to pin to centre"
-      return text
+      let pinned = config.pinnedMetric == hoveredMetric
+      return describe(datum(for: hoveredMetric))
+        + (pinned ? "\n\nClick to unpin" : "\n\nClick to pin to centre")
     }
-
     var lines = rings.map(describe)
-    if let message = coordinator.snapshot.liveSourceStatus.message {
-      lines.append("Live source: \(message)")
-    }
+    if let message = coordinator.snapshot.status.message { lines.append(message) }
     return lines.joined(separator: "\n")
   }
 }
 
 extension Notification.Name {
   static let openSettings = Notification.Name("ClaudeUsageWidget.openSettings")
+  static let openOnboarding = Notification.Name("ClaudeUsageWidget.openOnboarding")
 }
