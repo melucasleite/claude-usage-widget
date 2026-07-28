@@ -14,8 +14,16 @@ struct WaitingView: View {
   /// against a stable denominator rather than jumping when a new, longer
   /// `Retry-After` arrives.
   var total: Double = 1
+  /// The failure this wait came from, so the heading names it rather than
+  /// leaving the reader to guess what is being waited on.
+  var reason: String?
 
   private let accent = Color(hex: 0xFF9F0A)
+
+  private var title: String {
+    (reason?.localizedCaseInsensitiveContains("rate limited") ?? false)
+      ? "Rate limited" : "Waiting to retry"
+  }
 
   var body: some View {
     // TimelineView drives the tick, so there is no timer of ours to leak.
@@ -24,7 +32,7 @@ struct WaitingView: View {
       VStack(spacing: 12) {
         dial(remaining: remaining)
         VStack(spacing: 3) {
-          Text("Rate limited")
+          Text(title)
             .font(.system(size: 13, weight: .semibold, design: .rounded))
           Text("resumes automatically")
             .font(.system(size: 11, design: .rounded))

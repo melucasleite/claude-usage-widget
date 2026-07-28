@@ -26,14 +26,14 @@ struct WidgetView: View {
   private var needsToken: Bool { coordinator.snapshot.status == .needsToken }
   private var signInExpired: Bool { coordinator.snapshot.status == .signInExpired }
 
-  /// A wait worth showing a countdown for: one is running, and we have nothing
-  /// to display underneath it. With cached rings there is no reason to hide
-  /// them behind a timer.
+  /// Any wait shows a countdown, cached rings or not.
+  ///
+  /// Serving the last reading through a wait seemed kinder, but rings carry no
+  /// indication of their age: a stale number is indistinguishable from a live
+  /// one and is read as current. A countdown is honest about knowing nothing
+  /// right now, and says when that changes.
   private var waitingUntil: Date? {
-    guard !coordinator.snapshot.hasData,
-      let retryAt = coordinator.snapshot.retryAt,
-      retryAt > Date()
-    else { return nil }
+    guard let retryAt = coordinator.snapshot.retryAt, retryAt > Date() else { return nil }
     return retryAt
   }
 
@@ -90,7 +90,9 @@ struct WidgetView: View {
       } else if signInExpired {
         expiredPrompt(side: side)
       } else if let waitingUntil {
-        WaitingView(until: waitingUntil, size: side, total: longestWait)
+        WaitingView(
+          until: waitingUntil, size: side, total: longestWait,
+          reason: coordinator.snapshot.status.message)
       } else {
         ringStack(side: side)
         if config.showLegend { legend(side: side) }
