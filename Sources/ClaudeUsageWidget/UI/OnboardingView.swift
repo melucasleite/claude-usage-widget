@@ -16,9 +16,8 @@ struct OnboardingView: View {
 
   @State private var testState: TestState = .idle
   @State private var copied = false
-  // Both are resolved in `.task`, never as State defaults: each spawns a
+  // Resolved in `.task`, never as a State default: reading it spawns a
   // subprocess, and SwiftUI re-initialises the View struct on every update.
-  @State private var foundCLI = false
   @State private var signedIn = false
 
   private enum TestState: Equatable {
@@ -74,18 +73,13 @@ struct OnboardingView: View {
       .padding(28)
     }
     .frame(width: 520, height: 540)
-    .task {
-      signedIn = CredentialStore.hasCredentials
-      foundCLI = CredentialRefresher.locate() != nil
-    }
+    .task { signedIn = CredentialStore.hasCredentials }
   }
 
   // MARK: Pieces
 
   private var signInDetail: String {
-    foundCLI
-      ? "Run this in a terminal and sign in. The widget then reads the same credential — you do not need to keep the terminal open."
-      : "Claude Code does not appear to be installed. Install it first: the widget reads the credential it stores."
+    "Run this in a terminal and sign in. The widget reads the same credential — you do not need to keep the terminal open."
   }
 
   private var header: some View {

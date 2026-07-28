@@ -37,7 +37,10 @@ actor OAuthUsageProvider {
         return "Rate limited by the usage endpoint"
       case .unauthorized(let detail):
         if let detail, !detail.isEmpty { return "Token rejected: \(detail)" }
-        return "Token rejected — generate a new one with `claude setup-token`"
+        // Only using Claude Code refreshes the stored token: `claude auth
+        // status` reports on it without touching it, and nothing this app can
+        // do will renew it.
+        return "Sign-in expired — use Claude Code once to refresh it"
       case .http(let code, let detail):
         if let detail, !detail.isEmpty { return "HTTP \(code): \(detail)" }
         return "Usage endpoint returned HTTP \(code)"

@@ -121,13 +121,16 @@ struct UsageSnapshot: Equatable, Sendable {
     case ok
     /// Had a credential, but the last fetch failed.
     case failed(String)
+    /// The stored sign-in has expired. Every request would be refused, so the
+    /// widget stops making them and waits for a new credential to appear.
+    case signInExpired
 
     var message: String? {
       if case .failed(let m) = self { return m }
       return nil
     }
 
-    var hasData: Bool { self != .needsToken }
+    var hasData: Bool { self != .needsToken && self != .signInExpired }
   }
 
   static let empty = UsageSnapshot()

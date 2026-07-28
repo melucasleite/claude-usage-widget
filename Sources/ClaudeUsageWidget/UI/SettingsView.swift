@@ -134,9 +134,10 @@ struct SettingsView: View {
           usage endpoint requires the user:profile scope, which only Claude \
           Code's interactive sign-in grants.
 
-          That credential expires every few hours and only the `claude` CLI \
-          writes refreshes back, so if the rings go quiet the widget runs \
-          `claude auth status` itself to refresh it. That consumes no usage.
+          That credential expires every few hours, and only actually using \
+          Claude Code renews it — `claude auth status` reports on it without \
+          touching it. When it expires the widget stops requesting entirely \
+          and waits for a new one, rather than retrying against a wall.
           """
         )
         .font(.caption).foregroundStyle(.secondary)
@@ -172,6 +173,10 @@ struct SettingsView: View {
         Label("Live", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
       case .needsToken:
         Label("Not signed in", systemImage: "person.slash").foregroundStyle(.secondary)
+      case .signInExpired:
+        Label("Sign-in expired — start a Claude Code session", systemImage: "moon.zzz")
+          .foregroundStyle(.orange)
+          .multilineTextAlignment(.trailing)
       case .failed(let message):
         Label(message, systemImage: "exclamationmark.triangle.fill")
           .foregroundStyle(.orange)

@@ -41,13 +41,16 @@ final class UsageCoordinator: ObservableObject {
   private var liveBackoffUntil: Date?
   private var lastLiveFetch: Date?
   private var lastFailureReason: String?
+  /// Set when the stored sign-in was refused. Cleared only by a different
+  /// credential appearing — never by time passing, because time does not fix
+  /// an expired token.
+  private var signInExpired = false
+  /// The token that was refused, so a new one can be recognised. Held only in
+  /// memory and never written anywhere.
+  private var expiredToken: String?
   private var consecutiveFailures = 0
   private var cachedWindows: UsageWindows?
   private var cachedAt: Date?
-  /// Diagnostics for the status line: whether we tried to self-heal, and how
-  /// that went.
-  private(set) var didAttemptRefresh = false
-  private(set) var lastRefreshOutcome: CredentialRefresher.Outcome?
 
   /// Floor between live calls, whatever asks. The timer is not the only caller.
   private static let minimumLiveInterval: TimeInterval = 20
@@ -146,6 +149,37 @@ final class UsageCoordinator: ObservableObject {
       return
     }
 
+    // The stored credential carries its own expiry, so an expired sign-in can
+    // be recognised without spending a request to be told. The timestamp is
+    // otherwise treated as advisory — Claude Code refreshes in memory without
+    // always writing back — but once the server has confirmed a rejection,
+    // trusting it costs nothing and saves every subsequent request.
+    if !signInExpired, let creds = CredentialStore.load(), creds.isExpired,
+      expiredToken == nil || expiredToken == creds.accessToken
+    {
+      if lastFailureReason?.localizedCaseInsensitiveContains("rate limited") != true {
+        signInExpired = true
+        expiredToken = creds.accessToken
+      }
+    }
+
+    // While the sign-in is expired, check the Keychain rather than the network.
+    // Reading a local file costs nothing and cannot be rate limited; asking the
+    // server a question we already know the answer to costs both.
+    if signInExpired {
+      let current = CredentialStore.load()?.accessToken
+      if let current, current != expiredToken {
+        signInExpired = false
+        expiredToken = nil
+        consecutiveFailures = 0
+        lastFailureReason = nil
+      } else if !force {
+        snapshot = UsageSnapshot(
+          rings: [:], lastUpdated: snapshot.lastUpdated, status: .signInExpired)
+        return
+      }
+    }
+
     let serverWaitIsLong = liveBackoffUntil.map { $0.timeIntervalSince(now) > 120 } ?? false
     // A cached reading younger than the refresh interval is what the next poll
     // would have produced anyway, so serve it rather than spend a request.
@@ -156,7 +190,7 @@ final class UsageCoordinator: ObservableObject {
 
     if mayFetch {
       do {
-        let windows = try await fetchWithAutoRefresh()
+        let windows = try await live.fetch()
         cachedWindows = windows
         cachedAt = now
         lastLiveFetch = now
@@ -193,37 +227,6 @@ final class UsageCoordinator: ObservableObject {
     scheduleWake(for: next.retryAt)
   }
 
-  /// Fetches, and on a rejected token asks Claude Code to refresh once before
-  /// giving up.
-  ///
-  /// The credential expires every few hours and only the `claude` CLI writes
-  /// refreshes back — someone working mainly in the desktop app would otherwise
-  /// watch the widget go dark and be told to open a terminal they were not
-  /// using. `claude auth status` costs no usage, so trying it is close to free
-  /// and saves the trip.
-  ///
-  /// Exactly one attempt: if the refresh does not fix it, the token is not
-  /// merely stale and retrying in a loop would only obscure that.
-  private func fetchWithAutoRefresh() async throws -> UsageWindows {
-    do {
-      return try await live.fetch()
-    } catch OAuthUsageProvider.ProviderError.unauthorized(let detail) {
-      // A scope failure is permanent — refreshing cannot add a scope the
-      // credential was never granted, so do not waste the attempt.
-      if let detail, detail.localizedCaseInsensitiveContains("scope") {
-        throw OAuthUsageProvider.ProviderError.unauthorized(detail: detail)
-      }
-      didAttemptRefresh = true
-      let outcome = await CredentialRefresher.refresh()
-      guard outcome.succeeded else {
-        lastRefreshOutcome = outcome
-        throw OAuthUsageProvider.ProviderError.unauthorized(detail: detail)
-      }
-      lastRefreshOutcome = outcome
-      return try await live.fetch()
-    }
-  }
-
   /// Wakes up exactly when a wait expires.
   ///
   /// The poll timer is five minutes, so without this a rate limit that ended
@@ -244,11 +247,6 @@ final class UsageCoordinator: ObservableObject {
 
   private func statusText(now: Date) -> String {
     var reason = lastFailureReason ?? "Live source unavailable"
-    // If we tried to self-heal and could not, say so — otherwise "token
-    // rejected" reads as though nothing was attempted.
-    if case .cliNotFound = lastRefreshOutcome {
-      reason += " · could not find the `claude` CLI to refresh it"
-    }
     guard let until = liveBackoffUntil, until > now else { return reason }
     // Lead with *why*. A countdown alone tells you nothing you can act on.
     return "\(reason) · retry \(Int(until.timeIntervalSince(now)))s"
@@ -273,7 +271,19 @@ final class UsageCoordinator: ObservableObject {
     case OAuthUsageProvider.ProviderError.rateLimited(let retryAfter):
       liveBackoffUntil = now.addingTimeInterval(retryAfter ?? 60)
     case OAuthUsageProvider.ProviderError.unauthorized:
-      liveBackoffUntil = now.addingTimeInterval(45)
+      // Stop entirely rather than back off.
+      //
+      // An expired sign-in refuses every request identically, so the right
+      // number of requests to send is zero. This was a flat 45s retry, which
+      // meant a token that expired at 19:03 was retried all night — roughly
+      // eighty requests an hour for thirteen hours, and an hour-long rate
+      // limit by morning, for a condition no amount of asking could fix.
+      //
+      // Nothing this app can do renews it; only using Claude Code does. So it
+      // waits, and watches the Keychain instead of the network.
+      signInExpired = true
+      expiredToken = CredentialStore.load()?.accessToken
+      liveBackoffUntil = nil
     default:
       consecutiveFailures += 1
       liveBackoffUntil = now.addingTimeInterval(

@@ -24,6 +24,7 @@ struct WidgetView: View {
   private var config: Config { configStore.config }
   private var rings: [RingDatum] { coordinator.snapshot.ordered(by: config.visibleMetrics) }
   private var needsToken: Bool { coordinator.snapshot.status == .needsToken }
+  private var signInExpired: Bool { coordinator.snapshot.status == .signInExpired }
 
   /// A wait worth showing a countdown for: one is running, and we have nothing
   /// to display underneath it. With cached rings there is no reason to hide
@@ -86,6 +87,8 @@ struct WidgetView: View {
     VStack(spacing: 10) {
       if needsToken {
         setupPrompt(side: side)
+      } else if signInExpired {
+        expiredPrompt(side: side)
       } else if let waitingUntil {
         WaitingView(until: waitingUntil, size: side, total: longestWait)
       } else {
@@ -100,7 +103,7 @@ struct WidgetView: View {
     .overlay(alignment: .topLeading) { if hovering { closeButton } }
     .overlay(alignment: .bottomTrailing) { if hovering { resizeHint } }
     .overlay(alignment: .topTrailing) {
-      if hovering && !needsToken && waitingUntil == nil { controls }
+      if hovering && !needsToken && !signInExpired && waitingUntil == nil { controls }
     }
     .opacity(config.opacity)
     .onHover { hovering = $0 }
@@ -146,6 +149,35 @@ struct WidgetView: View {
       }
       .buttonStyle(.borderedProminent)
       .tint(Color(hex: 0xFF375F))
+    }
+    .frame(width: side)
+    .padding(.vertical, 6)
+  }
+
+  /// Shown when the stored sign-in has expired.
+  ///
+  /// One sentence naming the only thing that fixes it. No countdown, because
+  /// nothing is counting down: the widget has stopped asking entirely and is
+  /// watching the Keychain for a new credential instead. Retrying an expired
+  /// sign-in cannot succeed, and doing it every 45 seconds overnight is how
+  /// this app earned an hour-long rate limit for a problem it could not solve.
+  private func expiredPrompt(side: Double) -> some View {
+    VStack(spacing: 12) {
+      ZStack {
+        Circle()
+          .strokeBorder(style: StrokeStyle(lineWidth: 6, dash: [7, 7]))
+          .foregroundStyle(.secondary.opacity(0.30))
+        Image(systemName: "moon.zzz.fill")
+          .font(.system(size: side * 0.15, weight: .medium))
+          .foregroundStyle(.secondary)
+      }
+      .frame(width: side * 0.56, height: side * 0.56)
+
+      Text("Start a Claude Code session\nto get your stats")
+        .font(.system(size: 12, weight: .medium, design: .rounded))
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .foregroundStyle(.secondary)
     }
     .frame(width: side)
     .padding(.vertical, 6)

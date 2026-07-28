@@ -18,7 +18,6 @@ enum Diagnostics {
 
     // 1. Token
     print("[1] Credential")
-    print("    · Claude Code CLI: \(CredentialRefresher.locate()?.path ?? "not found")")
     let services = CredentialStore.discoverServiceNames()
     print("    · candidate Keychain services: \(services.joined(separator: ", "))")
     guard let creds = CredentialStore.load() else {
@@ -36,6 +35,13 @@ enum Diagnostics {
     if let expiry = creds.expiresAt {
       let mins = Int(expiry.timeIntervalSinceNow / 60)
       print("    · expires \(expiry.formatted(date: .abbreviated, time: .standard)) (\(mins) min)")
+      if creds.isExpired {
+        // The single most useful line this command can print when the rings
+        // are dark, and the one nobody could deduce: no amount of waiting or
+        // retrying renews this, and `claude auth status` does not either.
+        print("    ! this sign-in has expired — only using Claude Code renews it.")
+        print("      The widget stops requesting entirely while it is expired.")
+      }
     }
     print("    · value: <redacted, and it stays that way>\n")
 
