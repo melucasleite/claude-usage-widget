@@ -80,12 +80,12 @@ enum Diagnostics {
       for metric in RingMetric.allCases {
         let window =
           metric == .fable
-          ? windows.window(forModelFamily: "fable")
+          ? windows.window(forModelFamily: "Fable")
           : metric.apiKey.flatMap { windows[$0] }
         if let window {
           let key =
             metric == .fable
-            ? (windows.resolvedKey(forModelFamily: "fable") ?? "?") : (metric.apiKey ?? "?")
+            ? (windows.resolvedKey(forModelFamily: "Fable") ?? "?") : (metric.apiKey ?? "?")
           print(
             String(
               format: "    %-8@ %6.1f%%   (%@)", metric.title, window.utilization, key))

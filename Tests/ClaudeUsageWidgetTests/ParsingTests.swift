@@ -324,3 +324,64 @@ final class WaitingClockTests: XCTestCase {
     XCTAssertTrue(snapshot.hasData)
   }
 }
+
+/// The `limits` array names its models. Everything else is guesswork.
+final class LimitsArrayTests: XCTestCase {
+
+  /// A real response, trimmed. Note `seven_day_omelette` is null while Fable
+  /// is plainly at 3% — the codename inference was simply wrong, and this is
+  /// the case that proved it.
+  private let payload = """
+    {
+      "five_hour": { "utilization": 30.0, "resets_at": "2026-07-29T00:00:00.485879+00:00" },
+      "seven_day": { "utilization": 77.0, "resets_at": "2026-07-30T22:59:59.485902+00:00" },
+      "seven_day_omelette": null,
+      "seven_day_opus": null,
+      "limits": [
+        { "kind": "session", "percent": 30, "resets_at": "2026-07-29T00:00:00.485879+00:00", "scope": null },
+        { "kind": "weekly_all", "percent": 77, "resets_at": "2026-07-30T22:59:59.485902+00:00", "scope": null },
+        { "kind": "weekly_scoped", "percent": 3, "resets_at": "2026-07-30T22:59:59.486146+00:00",
+          "scope": { "model": { "id": null, "display_name": "Fable" } } }
+      ]
+    }
+    """.data(using: .utf8)!
+
+  func testFableComesFromItsDisplayName() throws {
+    let windows = try UsageWindows(data: payload)
+    XCTAssertEqual(windows.window(forModelDisplayName: "Fable")?.utilization, 3)
+    XCTAssertEqual(windows.window(forModelFamily: "Fable")?.utilization, 3)
+  }
+
+  /// The bug: the codename path resolved a null window to 0% and stayed there
+  /// while real usage climbed. The named row must win.
+  func testNamedRowBeatsTheCodenameGuess() throws {
+    let windows = try UsageWindows(data: payload)
+    XCTAssertNil(windows["seven_day_omelette"], "omelette really is null here")
+    XCTAssertEqual(
+      windows.window(forModelFamily: "Fable")?.utilization, 3,
+      "must not fall back to the null codename window")
+  }
+
+  func testSessionAndWeeklyComeFromKinds() throws {
+    let windows = try UsageWindows(data: payload)
+    XCTAssertEqual(windows.window(forKind: "session")?.utilization, 30)
+    XCTAssertEqual(windows.window(forKind: "weekly_all")?.utilization, 77)
+    XCTAssertNotNil(windows.window(forKind: "weekly_all")?.resetsAt)
+  }
+
+  func testExplicitOverrideStillWins() throws {
+    let windows = try UsageWindows(data: payload)
+    XCTAssertEqual(
+      windows.window(forModelFamily: "Fable", override: "five_hour")?.utilization, 30)
+  }
+
+  /// Responses without `limits` must still work through the old path.
+  func testFallsBackWhenLimitsIsAbsent() throws {
+    let old = """
+      { "five_hour": { "utilization": 9, "resets_at": null },
+        "seven_day_omelette": { "utilization": 42, "resets_at": null } }
+      """.data(using: .utf8)!
+    let windows = try UsageWindows(data: old)
+    XCTAssertEqual(windows.window(forModelFamily: "fable")?.utilization, 42)
+  }
+}

@@ -155,14 +155,35 @@ struct UsageWindows: Equatable, Sendable {
     "cowork", "oauth_apps", "promotional",
   ]
 
-  /// Observed internal codenames for public model names.
+  /// A row from the response's `limits` array.
   ///
-  /// The API does not use marketing names for per-model windows — the response
-  /// carries codenames (`seven_day_omelette`, alongside decoys like
-  /// `cinder_cove` and `nimbus_quill`). This mapping is derived from matching a
-  /// live response against what Claude Code's own `/usage` displayed, so it is
-  /// an **inference, not a documented contract**, and it may change. Override
-  /// it in Settings if a rename breaks the Fable ring.
+  /// This is the authoritative source and should always be preferred. The
+  /// top-level keys are codenames — `seven_day_omelette` sits among decoys like
+  /// `cinder_cove`, `nimbus_quill` and `tangelo` — and guessing which one is
+  /// which is exactly as reliable as it sounds. `limits` states it outright:
+  ///
+  /// ```json
+  /// { "kind": "weekly_scoped", "percent": 3,
+  ///   "scope": { "model": { "display_name": "Fable" } } }
+  /// ```
+  ///
+  /// The codename map below survives only as a fallback for responses that
+  /// predate `limits`. It was wrong: `seven_day_omelette` stayed null while
+  /// Fable usage climbed, because it is not Fable.
+  struct Limit: Equatable, Sendable {
+    /// `session`, `weekly_all`, or `weekly_scoped`.
+    let kind: String
+    let percent: Double
+    let resetsAt: Date?
+    /// Present on `weekly_scoped` rows: the model this limit applies to.
+    let modelDisplayName: String?
+
+    var window: Window { Window(utilization: percent, resetsAt: resetsAt) }
+  }
+
+  private(set) var limits: [Limit] = []
+
+  /// Fallback only — see `Limit`. Retained for responses without `limits`.
   static let modelCodenames: [String: [String]] = [
     "fable": ["fable", "omelette"]
   ]
@@ -172,6 +193,21 @@ struct UsageWindows: Equatable, Sendable {
       throw OAuthUsageProvider.ProviderError.decoding
     }
     self.raw = data
+    // `limits` first: it names its models, so nothing has to be inferred.
+    if let rows = root["limits"] as? [[String: Any]] {
+      limits = rows.compactMap { row in
+        guard let kind = row["kind"] as? String,
+          let percent = Self.double(row["percent"])
+        else { return nil }
+        let model = (row["scope"] as? [String: Any])?["model"] as? [String: Any]
+        return Limit(
+          kind: kind,
+          percent: percent,
+          resetsAt: Self.date(row["resets_at"]),
+          modelDisplayName: model?["display_name"] as? String)
+      }
+    }
+
     for (key, value) in root {
       seenKeys.insert(key)
       if value is NSNull {
@@ -185,7 +221,9 @@ struct UsageWindows: Equatable, Sendable {
         resetsAt: Self.date(obj["resets_at"])
       )
     }
-    guard !windows.isEmpty else { throw OAuthUsageProvider.ProviderError.decoding }
+    guard !windows.isEmpty || !limits.isEmpty else {
+      throw OAuthUsageProvider.ProviderError.decoding
+    }
   }
 
   /// Testing seam.
@@ -208,7 +246,23 @@ struct UsageWindows: Equatable, Sendable {
   /// At each step a present-but-null value resolves to 0%, since the key
   /// existing is itself the signal that the window applies to this account.
   /// Returns `nil` only when no candidate key appears in the response at all.
+  /// A limit by `kind`, e.g. `session` or `weekly_all`.
+  func window(forKind kind: String) -> Window? {
+    limits.first { $0.kind == kind }?.window
+  }
+
+  /// A per-model limit by the display name the API itself reports.
+  func window(forModelDisplayName name: String) -> Window? {
+    limits.first {
+      $0.modelDisplayName?.caseInsensitiveCompare(name) == .orderedSame
+    }?.window
+  }
+
   func window(forModelFamily name: String, override: String? = nil) -> Window? {
+    // The named row wins whenever the response provides one.
+    if override?.isEmpty != false, let named = window(forModelDisplayName: name) {
+      return named
+    }
     var candidates: [String] = []
     if let override, !override.isEmpty { candidates.append(override) }
 
@@ -240,6 +294,9 @@ struct UsageWindows: Equatable, Sendable {
 
   /// Which key `window(forModelFamily:)` actually matched — for diagnostics.
   func resolvedKey(forModelFamily name: String, override: String? = nil) -> String? {
+    if override?.isEmpty != false, window(forModelDisplayName: name) != nil {
+      return "limits[scope.model.display_name = \(name)]"
+    }
     var candidates: [String] = []
     if let override, !override.isEmpty { candidates.append(override) }
     let lower = name.lowercased()

@@ -189,7 +189,7 @@ struct OnboardingView: View {
         let windows = try await OAuthUsageProvider().fetch()
         let live = RingMetric.allCases.filter { metric in
           metric == .fable
-            ? windows.window(forModelFamily: "fable") != nil
+            ? windows.window(forModelFamily: "Fable") != nil
             : metric.apiKey.flatMap { windows[$0] } != nil
         }
         testState = .passed(

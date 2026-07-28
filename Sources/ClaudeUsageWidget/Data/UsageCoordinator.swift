@@ -296,10 +296,13 @@ final class UsageCoordinator: ObservableObject {
   private func buildRings(from windows: UsageWindows) -> [RingMetric: RingDatum] {
     var rings: [RingMetric: RingDatum] = [:]
     for metric in RingMetric.allCases {
+      // `limits` names its rows, so it is tried first for every ring; the
+      // flat top-level keys are the fallback for responses without it.
       let window: UsageWindows.Window? =
         metric == .fable
-        ? windows.window(forModelFamily: "fable", override: config.fableWindowKey)
-        : metric.apiKey.flatMap { windows[$0] }
+        ? windows.window(forModelFamily: "Fable", override: config.fableWindowKey)
+        : (metric.limitKind.flatMap { windows.window(forKind: $0) }
+          ?? metric.apiKey.flatMap { windows[$0] })
 
       rings[metric] =
         window.map {

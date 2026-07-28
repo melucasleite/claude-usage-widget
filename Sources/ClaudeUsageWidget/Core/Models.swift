@@ -37,14 +37,22 @@ enum RingMetric: String, Codable, CaseIterable, Identifiable, Sendable {
     }
   }
 
-  /// The API field this ring reads. Per-model windows use internal codenames
-  /// rather than public model names, so Fable resolves by lookup rather than a
-  /// literal key. See `UsageWindows.modelCodenames`.
+  /// The `kind` this ring reads from the response's `limits` array, which is
+  /// the authoritative source.
+  var limitKind: String? {
+    switch self {
+    case .fiveHour: return "session"
+    case .weekly: return "weekly_all"
+    case .fable: return nil  // matched by model display name instead
+    }
+  }
+
+  /// Top-level key, used only when a response has no `limits` array.
   var apiKey: String? {
     switch self {
     case .fiveHour: return "five_hour"
     case .weekly: return "seven_day"
-    case .fable: return nil  // resolved by codename
+    case .fable: return nil
     }
   }
 
