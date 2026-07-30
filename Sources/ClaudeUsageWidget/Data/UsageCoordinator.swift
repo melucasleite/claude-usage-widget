@@ -11,6 +11,9 @@ final class UsageCoordinator: ObservableObject {
 
   @Published private(set) var snapshot: UsageSnapshot = .empty
   @Published private(set) var isRefreshing = false
+  /// Readings over time, recorded from live responses only, so the forecast
+  /// view has a rate to work with. See `UsageHistory`.
+  @Published private(set) var history: UsageHistory = .load()
 
   private let live = OAuthUsageProvider()
   private var timer: Timer?
@@ -100,8 +103,12 @@ final class UsageCoordinator: ObservableObject {
     // Paint the cached reading first so the rings are never blank while a
     // request is in flight — or while one is deliberately not being made.
     if let cached = cachedWindows {
-      snapshot = UsageSnapshot(
-        rings: buildRings(from: cached), lastUpdated: cachedAt, status: .ok)
+      let rings = buildRings(from: cached)
+      snapshot = UsageSnapshot(rings: rings, lastUpdated: cachedAt, status: .ok)
+      // A restored reading is still a reading — record it under its own
+      // timestamp. The spacing guard drops it if it was recorded last run.
+      history.record(rings, at: cachedAt ?? Date())
+      history.save()
     }
     Task { await refresh() }
   }
@@ -201,6 +208,8 @@ final class UsageCoordinator: ObservableObject {
         next.lastUpdated = now
         next.status = .ok
         saveRateLimitState()
+        history.record(next.rings, at: now)
+        history.save()
       } catch {
         lastLiveFetch = now
         lastFailureReason = error.localizedDescription

@@ -57,6 +57,8 @@ struct WidgetView: View {
 
   private var isPinned: Bool { hoveredMetric == nil && config.pinnedMetric != nil }
 
+  private var displayMode: Config.DisplayMode { config.displayMode ?? .rings }
+
   private func datum(for metric: RingMetric) -> RingDatum {
     coordinator.snapshot.rings[metric] ?? .unavailable(metric)
   }
@@ -93,6 +95,10 @@ struct WidgetView: View {
         WaitingView(
           until: waitingUntil, size: side, total: longestWait,
           reason: coordinator.snapshot.status.message)
+      } else if displayMode == .forecast {
+        ForecastView(
+          history: coordinator.history, rings: coordinator.snapshot.rings,
+          configStore: configStore, side: side)
       } else {
         ringStack(side: side)
         if config.showLegend { legend(side: side) }
@@ -323,6 +329,13 @@ struct WidgetView: View {
 
   private var controls: some View {
     HStack(spacing: 6) {
+      Button {
+        configStore.config.displayMode = displayMode == .forecast ? .rings : .forecast
+      } label: {
+        Image(systemName: displayMode == .forecast ? "circle.circle" : "chart.line.uptrend.xyaxis")
+      }
+      .help(displayMode == .forecast ? "Show rings" : "Show forecast")
+
       Button {
         Task { await coordinator.refresh(force: true) }
       } label: {

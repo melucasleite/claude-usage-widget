@@ -57,6 +57,23 @@ struct Config: Codable, Equatable {
   /// Gap between concentric rings in points.
   var ringSpacing: Double = 5
 
+  // MARK: Display mode
+
+  /// What fills the widget's main area.
+  enum DisplayMode: String, Codable {
+    /// Concentric rings, one per metric.
+    case rings
+    /// One metric's trajectory and when it is on pace to hit 100%.
+    case forecast
+  }
+
+  /// Optional so config files written before this existed still decode;
+  /// absent means rings.
+  var displayMode: DisplayMode?
+
+  /// Metric the forecast focuses on; absent means the weekly limit.
+  var forecastMetric: RingMetric?
+
   // MARK: Data
 
   /// Seconds between refreshes.

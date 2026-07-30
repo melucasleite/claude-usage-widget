@@ -92,13 +92,7 @@ struct RingDatum: Identifiable, Equatable, Sendable {
   /// Countdown until the window resets, e.g. "2h 14m".
   func resetText(now: Date = Date()) -> String? {
     guard let resetsAt, resetsAt > now else { return nil }
-    let seconds = Int(resetsAt.timeIntervalSince(now))
-    let days = seconds / 86_400
-    let hours = (seconds % 86_400) / 3_600
-    let minutes = (seconds % 3_600) / 60
-    if days > 0 { return "\(days)d \(hours)h" }
-    if hours > 0 { return "\(hours)h \(minutes)m" }
-    return "\(minutes)m"
+    return DurationText.short(resetsAt.timeIntervalSince(now))
   }
 
   static func unavailable(_ metric: RingMetric) -> RingDatum {

@@ -17,6 +17,8 @@ enum PreviewRenderer {
     let outPath = args.indices.contains(flagIndex + 1) ? args[flagIndex + 1] : "preview.png"
     if args.contains("--waiting") {
       renderWaiting(to: URL(fileURLWithPath: outPath))
+    } else if args.contains("--forecast") {
+      renderForecast(to: URL(fileURLWithPath: outPath))
     } else {
       render(rings: demoRings(), to: URL(fileURLWithPath: outPath))
     }
@@ -53,6 +55,49 @@ enum PreviewRenderer {
         WaitingView(
           until: Date().addingTimeInterval(32 * 60 + 7), size: size * 0.72,
           total: 60 * 60)
+      }
+      .frame(width: size, height: size * 1.05)
+      .environment(\.colorScheme, .dark)
+    write(content, to: url)
+  }
+
+  /// Renders the forecast with a fabricated 30-hour climb, chosen so the
+  /// projection crosses 100% *before* the reset — the case the view exists to
+  /// warn about.
+  static func renderForecast(to url: URL, size: CGFloat = 260) {
+    let now = Date()
+    var history = UsageHistory()
+    let start = now.addingTimeInterval(-30 * 3_600)
+    var t: TimeInterval = 0
+    while t <= 30 * 3_600 {
+      // ~1.1%/h with a little wobble, ending around 81%.
+      let progress = 0.48 + 0.011 * t / 3_600 + 0.006 * sin(t / 3_400)
+      history.record(
+        [
+          .weekly:
+            RingDatum(metric: .weekly, progress: progress, resetsAt: nil, isAvailable: true)
+        ],
+        at: start.addingTimeInterval(t))
+      t += 600
+    }
+    let current = history.samples[.weekly]?.last?.progress ?? 0.81
+    let rings: [RingMetric: RingDatum] = [
+      .weekly:
+        RingDatum(
+          metric: .weekly, progress: current,
+          resetsAt: now.addingTimeInterval(40 * 3_600), isAvailable: true)
+    ]
+
+    let content =
+      ZStack {
+        RoundedRectangle(cornerRadius: 28, style: .continuous)
+          .fill(Color(hex: 0x1C1C1E))
+          .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+              .strokeBorder(.white.opacity(0.10), lineWidth: 1))
+        ForecastView(
+          history: history, rings: rings,
+          configStore: ConfigStore(config: Config()), side: size * 0.84)
       }
       .frame(width: size, height: size * 1.05)
       .environment(\.colorScheme, .dark)
