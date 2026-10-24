@@ -5,48 +5,209 @@
 <h1 align="center">Claude Usage Widget</h1>
 
 <p align="center">
-  A small always-on-top macOS widget that shows your Claude Code usage as
-  concentric Apple-Watch-style activity rings.
+  <strong>Your Claude Code limits, as Apple-Watch-style activity rings — always on top, one glance away.</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/melucasleite/claude-usage-widget/releases/latest">
-    <img src="https://img.shields.io/github/v/release/melucasleite/claude-usage-widget?label=download&style=for-the-badge&color=FF375F" alt="Download latest release">
-  </a>
-  <img src="https://img.shields.io/badge/macOS-14%2B-333?style=for-the-badge" alt="macOS 14+">
+  <a href="https://github.com/melucasleite/claude-usage-widget/releases/latest"><img src="https://img.shields.io/github/v/release/melucasleite/claude-usage-widget?label=download&style=for-the-badge&color=FF375F" alt="Download latest release"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B-333?style=for-the-badge&logo=apple&logoColor=white" alt="macOS 14+">
+  <img src="https://img.shields.io/badge/Swift-6.0-F05138?style=for-the-badge&logo=swift&logoColor=white" alt="Swift 6.0">
   <img src="https://img.shields.io/badge/signed-notarized-A0F624?style=for-the-badge&labelColor=333" alt="Signed and notarized">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-BF5AF2?style=for-the-badge" alt="MIT license"></a>
 </p>
 
 <p align="center">
-  <img src="docs/rings.png" alt="Three concentric usage rings: 5-hour, weekly and Fable" width="300">
+  <img src="docs/rings.png" alt="Three concentric usage rings: 5-hour at 62%, weekly at 94%, and Fable at 118% drawing a second lap" width="300">
+  <br>
+  <sub>Demo values — rendered offscreen with <code>--render-preview</code>, so nobody's real usage is in this picture.</sub>
 </p>
 
-## Download
+---
 
-**[⬇ Download the latest release](https://github.com/melucasleite/claude-usage-widget/releases/latest)**
+Claude Code's `/usage` tells you exactly how close you are to your limits — but
+only when you stop and ask. **Claude Usage Widget** keeps the same numbers
+floating on your desktop as three concentric rings, so you see a limit coming
+long before it arrives. It reads the sign-in Claude Code already has, so there
+is nothing to paste, and every percentage it shows came straight from
+Anthropic's own usage endpoint.
 
-Open the `.dmg` and drag the app across to Applications.
+## ✨ Highlights
 
-Requires macOS 14+ and a Claude subscription. On first launch it walks you
-through generating a token — the widget reads *your* limits, nobody else's.
+- **Three rings, three limits** — the rolling 5-hour session, the weekly
+  all-models limit, and the weekly Fable limit. Going over 100% draws a second
+  lap, just like closing your Move ring twice.
+- **Forecast view** — one click flips the widget to a chart of a limit's
+  recent trajectory and answers the only question that matters: _at this pace,
+  do you hit 100% before the reset?_
+- **Zero setup** — reuses Claude Code's existing sign-in. No API key, no token
+  to copy around.
+- **Honest numbers only** — no local estimation, ever. If the data is not
+  there, the ring says "—" instead of guessing.
+- **Polite to the API** — polls every five minutes, caches the last reading so
+  relaunching is free, persists rate-limit backoff to disk, and shows a live
+  countdown instead of hammering a `429`.
+- **Native and lightweight** — a borderless SwiftUI/AppKit panel with no Dock
+  icon. Drag it anywhere, resize from any edge, keep it on every Space, or
+  tuck it away behind a menu bar readout.
+- **Signed and notarized** — download the `.dmg`, drag to Applications, done.
 
-To keep it around permanently, add it under System Settings ▸ General ▸
-Login Items.
+| Ring       | Colour    | What it measures                |
+| ---------- | --------- | ------------------------------- |
+| **5-Hour** | 🔴 red    | Rolling 5-hour session window   |
+| **Weekly** | 🟢 green  | 7-day rolling limit, all models |
+| **Fable**  | 🟣 violet | Weekly Fable-model limit        |
 
-Each ring is one limit:
+Any ring can be switched off in **Settings ▸ Rings**.
 
-| Ring | Colour | What it measures | Source |
-|---|---|---|---|
-| **5-Hour** | red | rolling 5-hour session window | live API |
-| **Weekly** | green | 7-day rolling limit, all models | live API |
-| **Fable** | violet | weekly Fable-model limit | live API |
+## 📦 Install
 
-Three rings, because three is what the plan actually exposes. They are
-data-driven, so you can turn any of them off in Settings.
+1. **[Download the latest `.dmg`](https://github.com/melucasleite/claude-usage-widget/releases/latest)**,
+   open it, and drag **Claude Usage Widget** to Applications.
+2. Make sure Claude Code is signed in on this Mac — if you have not already:
+   ```bash
+   claude
+   ```
+3. Launch the app. If it cannot find a sign-in, a short setup guide opens with a
+   **Test connection** button that makes one real request to prove it works.
 
-## Building from source
+**Requirements:** macOS 14 or later, Claude Code signed in with a Claude
+subscription.
 
-Not required to use it — [the release](https://github.com/melucasleite/claude-usage-widget/releases/latest)
+> [!TIP]
+> To start it with your Mac, add it under **System Settings ▸ General ▸ Login
+> Items**.
+
+## 🖱️ Using it
+
+| Do this                    | And                                                                                                                                    |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Hover a ring**           | The centre readout previews that ring; the tooltip adds the reset countdown.                                                           |
+| **Click a ring**           | Pins it to the centre (persists across relaunches). Click again to unpin — unpinned, the centre follows whichever ring is most urgent. |
+| **Hover the widget**       | Reveals controls: quit (top-left); forecast toggle, refresh and settings (top-right).                                                  |
+| **Drag / pull an edge**    | Moves or resizes the widget, with native macOS resize cursors. Position and size are remembered.                                       |
+| **Right-click / menu bar** | Full menu: _Centre Shows_, _Always on Top_, _Hide Widget_, _Refresh Now_ (⌘R), _Settings…_ (⌘,), _Quit_.                               |
+
+Closing the widget quits the app — the widget _is_ the app. To keep it running
+but out of sight, use **Hide Widget** instead.
+
+### 📈 Forecast view
+
+Toggle it from the hover controls. It charts one limit — what the API reported
+is a solid line, the projection is dashed, and the reset sits on its own dashed
+vertical line — then gives a verdict such as _"On pace to hit 100% in 3h 10m — 40m
+before the reset"_ or _"Reset in 2h 5m beats your pace"_. It needs about an hour
+of readings before it will call a trend; the pill switcher at the bottom picks
+which limit to forecast.
+
+## ⚙️ How it works
+
+```mermaid
+flowchart LR
+    A["Claude Code sign-in<br/>(macOS Keychain)"] -- read only --> W["Claude Usage Widget"]
+    W -- "GET /api/oauth/usage<br/>every 5 min" --> API["api.anthropic.com"]
+    API -- "exact percentages<br/>+ reset times" --> W
+    W --> R["Rings · forecast<br/>menu bar readout"]
+```
+
+- **One data source:** `GET https://api.anthropic.com/api/oauth/usage` — the
+  same endpoint `/usage` inside Claude Code talks to. It returns exact
+  percentages and reset times; the widget draws them and nothing else.
+- **One credential:** the OAuth sign-in Claude Code stores in your Keychain
+  (or `~/.claude/.credentials.json`). It is only ever read.
+- **Gentle polling:** every 5 minutes by default (adjustable from 1 to 15 in
+  **Settings ▸ Connection**), with a hard 20-second floor between requests no
+  matter what triggers them.
+- **Local state** — settings, the cached last reading, rate-limit backoff and
+  up to 8 days of usage history for the forecast — lives in
+  `~/Library/Application Support/ClaudeUsageWidget/`. No credential is ever
+  written there.
+
+## 🔒 Privacy & security
+
+- The credential is **only ever read** — never written, copied or cached: not
+  to `config.json`, not to logs, not to disk.
+- The only network request the app makes is the usage call to
+  `api.anthropic.com`.
+- It reads through `/usr/bin/security` first. Claude Code creates its Keychain
+  item with that same tool, which puts it on the item's access list, so the
+  read is silent rather than a Keychain prompt.
+- `OAuthCredentials` prints itself as `<redacted>`, and a unit test asserts it —
+  removing the redaction turns the build red.
+- `--check` diagnostics never print a token value, only metadata such as
+  expiry.
+- No credential of any kind is in this repository, and `.gitignore` carries
+  backstop patterns to keep it that way.
+
+## 🩺 Troubleshooting & FAQ
+
+<details>
+<summary><b>The widget says "Start a Claude Code session to get your stats".</b></summary>
+
+Claude Code's stored sign-in expires every few hours, and only actually using
+Claude Code renews it. Rather than retrying against a wall all night (an
+expired token refuses every request identically), the widget **stops
+requesting entirely** and watches the Keychain instead. Start a Claude Code
+session and it picks up the fresh credential on its own.
+
+</details>
+
+<details>
+<summary><b>Why can't I just use <code>claude setup-token</code>?</b></summary>
+
+Because the endpoint refuses it, and says so precisely:
+
+```
+HTTP 403
+permission_error: OAuth token does not meet scope requirement user:profile
+```
+
+Claude Code's interactive login requests `user:profile user:inference
+user:sessions:claude`; `setup-token` grants inference only. No amount of
+regenerating it will add the missing scope. The desktop app is no help either:
+it keeps a claude.ai web session in an Electron cookie jar, not an OAuth bearer
+token.
+
+</details>
+
+<details>
+<summary><b>The rings show a countdown instead of numbers.</b></summary>
+
+The usage endpoint is rate limited more tightly than it looks. When it answers
+`429`, the widget shows how long the wait is and resumes by itself the moment
+it ends — clicking Refresh during a long server-directed wait would only
+deepen it. The backoff is persisted to disk, so quitting and relaunching does
+not reset it.
+
+</details>
+
+<details>
+<summary><b>Ask the app what is wrong: <code>--check</code></b></summary>
+
+```bash
+/Applications/ClaudeUsageWidget.app/Contents/MacOS/ClaudeUsageWidget --check
+```
+
+Reports which Keychain items it found, whether the credential parsed and when
+it expires, whether the endpoint answered, and which rings resolved. It honours
+any active rate-limit wait; pass `--force` to query anyway (which will probably
+deepen the wait). If you built from source, the binary is at
+`./dist/ClaudeUsageWidget.app/Contents/MacOS/ClaudeUsageWidget`.
+
+</details>
+
+<details>
+<summary><b>Why isn't it on the Mac App Store?</b></summary>
+
+The Mac App Store requires sandboxing, and a sandboxed app cannot read Claude
+Code's Keychain item or invoke `/usr/bin/security` — which is every one of this
+app's data paths. So it ships the way most Mac utilities do: **Developer ID +
+notarization**.
+
+</details>
+
+## 🛠️ Build from source
+
+Not needed to use it — [the release](https://github.com/melucasleite/claude-usage-widget/releases/latest)
 is the easy path. This is for hacking on it.
 
 ```bash
@@ -55,501 +216,233 @@ cd claude-usage-widget
 ./Scripts/build-app.sh --run
 ```
 
-That produces `dist/ClaudeUsageWidget.app` and launches it.
+That builds `dist/ClaudeUsageWidget.app` with plain SwiftPM — no `.xcodeproj`
+required — and launches it.
 
-| | |
-|---|---|
-| `swift build` / `swift test` | day-to-day |
-| `./Scripts/build-app.sh --run` | build the `.app` and launch |
-| `./Scripts/make-icon.sh <png>` | regenerate the icon |
-| `./Scripts/make-dmg.sh <version>` | drag-to-Applications disk image |
-| `./Scripts/release.sh <version>` | sign, notarize, package, publish |
-| `--check` | diagnose credentials and the live endpoint |
+| Command                           | What it does                                                 |
+| --------------------------------- | ------------------------------------------------------------ |
+| `swift build` / `swift test`      | Day-to-day build and tests                                   |
+| `./Scripts/build-app.sh [--run]`  | Build the `.app` bundle into `dist/` (`--debug` for debug)   |
+| `./Scripts/make-icon.sh <png>`    | Regenerate `Resources/AppIcon.icns` from a square PNG        |
+| `./Scripts/make-dmg.sh <version>` | Build a drag-to-Applications disk image                      |
+| `./Scripts/release.sh <version>`  | Sign, notarize, staple, package and publish a GitHub Release |
 
-> **Xcode note.** SwiftUI's `@State` and friends are macros now, expanded by
-> `libSwiftUIMacros.dylib`, which ships inside Xcode and *not* with the
-> standalone Command Line Tools. The build script finds any installed Xcode
-> automatically and borrows it via `DEVELOPER_DIR` — no `xcode-select` (and no
-> `sudo`) required. Override it explicitly if you like:
+> [!NOTE]
+> SwiftUI's `@State` and friends are macros, expanded by a plugin that ships
+> inside Xcode and **not** with the standalone Command Line Tools. The build
+> script finds any installed Xcode automatically and borrows it via
+> `DEVELOPER_DIR` — no `xcode-select`, no `sudo`. Override it if you like:
 >
 > ```bash
 > DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./Scripts/build-app.sh
 > ```
 
-## Usage
+`build-app.sh` signs with a real certificate when it finds one (set
+`CODESIGN_IDENTITY` to choose), because Keychain grants bind to code identity
+and an ad-hoc signature is invalidated by every rebuild.
 
-- **Hover a ring** to preview it: the centre readout switches to that ring's
-  percentage, label and colour, and reverts when you leave. The tooltip adds
-  the reset countdown and where the number came from.
-- **Click a ring** to pin it there. Click it again to unpin. The choice
-  persists across relaunches. Unpinned, the centre follows whichever ring is
-  closest to its limit.
-- **Drag** the widget anywhere. Its position is remembered.
-- **Hover** the widget for its controls: close top-left, refresh and settings
-  top-right. Close quits the app — the widget *is* the app, so leaving a menu
-  bar item behind would not feel like closing. To keep it running but out of
-  sight, use **Hide Widget** in the menu instead.
-- **Right-click** the widget, or click the menu bar readout, for the full menu
-  — including *Centre Shows*, which pins a ring without clicking one.
-- **Always on top** is a toggle — in the menu, or in Settings → Appearance.
-
-Reset countdowns live in the tooltip rather than on the face. The widget is
-something you glance at, and a number that only matters once you are already
-worried has not earned permanent space in the middle.
-
-### Diagnostics
-
-If the rings are not showing live data, ask the app why:
+### Tests
 
 ```bash
-./dist/ClaudeUsageWidget.app/Contents/MacOS/ClaudeUsageWidget --check
+swift test
 ```
 
-It reports which Keychain items it found, whether the token parsed, whether the
-endpoint answered, and which windows came back. It never prints a token value —
-only metadata such as length and expiry.
+Covers the parts that fail quietly: decoding a payload whose keys are not
+guaranteed, resolving Fable by display name and by codename fallback, treating
+a null model window as 0%, credential parsing and redaction, ring hit-testing,
+trend and projection maths, and the rule that cosmetic settings never trigger a
+network call.
 
-### Regenerating the screenshot
+<details>
+<summary><b>🔬 Under the hood: the unofficial usage endpoint</b></summary>
 
-```bash
-./dist/ClaudeUsageWidget.app/Contents/MacOS/ClaudeUsageWidget --render-preview docs/rings.png --demo
-```
+<br>
 
-`--demo` uses fixed representative values, so the image in this README contains
-none of anyone's real numbers.
-
-## How it gets the data
-
-One source: `GET https://api.anthropic.com/api/oauth/usage` — the same endpoint
-`/usage` inside Claude Code talks to. It returns exact percentages:
+The endpoint is **unofficial and undocumented**. A trimmed, illustrative
+response:
 
 ```json
 {
-  "five_hour":          { "utilization": 30.0, "resets_at": "..." },
-  "seven_day":          { "utilization": 47.0, "resets_at": "..." },
-  "seven_day_omelette": null
+  "five_hour": { "utilization": 30.0, "resets_at": "..." },
+  "seven_day": { "utilization": 47.0, "resets_at": "..." },
+  "seven_day_omelette": null,
+  "limits": [
+    {
+      "kind": "weekly_scoped",
+      "percent": 3,
+      "scope": { "model": { "display_name": "Fable" } }
+    }
+  ]
 }
 ```
 
-There is deliberately **no local estimation**. An earlier version derived
-percentages from transcript token counts when the API was unreachable, which
-meant inventing a denominator — a Max plan's quotas are not published — and it
-once confidently displayed **3704%**. A ring that says "—" is more useful than
-one that says something false, so unavailable data now stays unavailable.
+Things worth knowing if you build something similar:
 
-This endpoint is **unofficial and undocumented**. Three things are worth
-knowing if you build something similar:
-
-- The `User-Agent: claude-code/<version>` header is not optional in practice.
-  Without it you land in an aggressively rate-limited bucket and get persistent
-  `429`s.
-- **Per-model windows use internal codenames, not model names.** There is no
-  `seven_day_fable`. A live response carries `seven_day_omelette` alongside
-  decoys like `cinder_cove`, `nimbus_quill` and `iguana_necktie`. The mapping
-  here is inferred by matching a live response against what `/usage` displayed
-  — an inference, not a contract. Pin a different key in Settings if it moves.
+- **The `limits` array is the authoritative source.** Each row has a `kind`
+  (`session`, `weekly_all`, `weekly_scoped`) and, for per-model rows, the
+  model's display name. The widget reads all three rings from it first.
+- **Top-level per-model keys are internal codenames, not model names.** There
+  is no `seven_day_fable`; a live response carries keys like
+  `seven_day_omelette` alongside decoys such as `cinder_cove` and
+  `nimbus_quill`. An earlier version guessed the mapping and the Fable ring sat
+  at 0% while real usage climbed — which is why `limits` now wins. The codename
+  lookup survives only as a fallback for responses without `limits`, and can be
+  pinned with `fableWindowKey` in `config.json`.
 - **`null` means 0%, not "unavailable".** A per-model key that is present but
-  null means the window applies to your account with no usage yet, which is
+  null means the window applies to your account with no usage yet — which is
   how `/usage` renders it.
+- **`User-Agent: claude-code/<version>` is not optional in practice.** Without
+  it you land in an aggressively rate-limited bucket and get persistent `429`s.
+- **There is deliberately no local estimation.** An earlier version derived
+  percentages from transcript token counts when the API was unreachable, which
+  meant inventing a denominator — and it once confidently displayed **3704%**.
+  The forecast view is the one piece of local arithmetic, it uses only readings
+  the API returned, and it is always drawn dashed and labelled as a projection.
+- **Backoff is persisted.** Keeping it in memory quietly defeats it: a handful
+  of relaunches can turn a short `Retry-After` into an hour-long one. The last
+  successful response is cached too, so relaunching costs no request.
 
-### Rate limiting
+</details>
 
-The endpoint is limited more tightly than it looks. The widget polls every
-three minutes by default and enforces a floor between calls regardless of what
-asks, because the timer is not the only caller.
+<details>
+<summary><b>🧭 Architecture</b></summary>
 
-Backoff is **persisted to disk**. Keeping it in memory quietly defeats it:
-quitting and reopening resets the timer and fires a request immediately, so a
-handful of relaunches can turn a short `Retry-After` into an hour-long one.
-`--check` honours the same wait and needs `--force` to override.
-
-## Authentication
-
-The widget reads the OAuth credential **Claude Code already stores**. There is
-nothing to paste, and no token of its own.
-
-```bash
-claude    # sign in once, if you have not already
-```
-
-### Why not `claude setup-token`
-
-Because it does not work, and the endpoint says so precisely:
-
-```
-HTTP 403
-permission_error: OAuth token does not meet scope requirement user:profile
-```
-
-Claude Code's interactive login requests `user:profile user:inference
-user:sessions:claude`. `setup-token` grants inference only — it exists for API
-access, not account access. So a long-lived token can never read usage, no
-matter how many times you regenerate it.
-
-The desktop app is no help either: it keeps a claude.ai **web session** in an
-Electron cookie jar (`Claude Safe Storage`), not an OAuth bearer token.
-
-### Keeping it fresh
-
-That credential expires every few hours, and only the `claude` CLI writes
-refreshes back to the Keychain — so someone who works mainly in the desktop app
-can find it stale through no fault of their own.
-
-Rather than telling them to open a terminal, the widget runs `claude auth
-status` itself on a rejected token, then retries once. That command **consumes
-no usage** and refreshes the stored credential as a side effect.
-
-It deliberately does **not** touch the refresh token directly. OAuth refresh
-tokens commonly rotate, and spending one behind Claude Code's back could
-invalidate its session — breaking the very thing the widget depends on.
-Delegating to the CLI keeps that in the hands of the tool that owns it.
-
-A scope failure skips the refresh attempt entirely: refreshing cannot add a
-scope that was never granted, and retrying would only obscure the real reason.
-
-### Security
-
-- The credential is **only ever read**. This app never writes, copies or caches
-  it — not to `config.json`, not to logs, not to disk.
-- `/usr/bin/security` is tried first. Claude Code creates its Keychain item via
-  `security add-generic-password`, which puts that tool on the item's
-  access-control list, so reading through it is silent. Calling
-  `SecItemCopyMatching` from this app is a different binary asking for someone
-  else's item — exactly what macOS puts a dialog in front of.
-- Keychain grants bind to *code identity*, so an ad-hoc signature is
-  invalidated by every rebuild. `build-app.sh` signs with a real certificate
-  when one exists, which is why "Always Allow" sticks.
-- `OAuthCredentials` prints `<redacted>`; a unit test asserts it, so removing
-  the redaction turns the build red.
-- No credential of any kind is in this repository.
-
-### Diagnostics
-
-If the rings are not showing live data, ask the app why:
-
-```bash
-./dist/ClaudeUsageWidget.app/Contents/MacOS/ClaudeUsageWidget --check
-```
-
-It reports which Keychain items it found, whether the token parsed, whether the
-endpoint answered, and which windows came back. It never prints a token value —
-only metadata such as length and expiry.
-
-### Regenerating the screenshot
-
-```bash
-./dist/ClaudeUsageWidget.app/Contents/MacOS/ClaudeUsageWidget --render-preview docs/rings.png --demo
-```
-
-`--demo` uses fixed representative values, so the image in this README contains
-none of anyone's real numbers.
-
-## How it gets the data
-
-One source: `GET https://api.anthropic.com/api/oauth/usage` — the same endpoint
-`/usage` inside Claude Code talks to. It returns exact percentages:
-
-```json
-{
-  "five_hour":          { "utilization": 30.0, "resets_at": "..." },
-  "seven_day":          { "utilization": 47.0, "resets_at": "..." },
-  "seven_day_omelette": null
-}
-```
-
-There is deliberately **no local estimation**. An earlier version derived
-percentages from transcript token counts when the API was unreachable, which
-meant inventing a denominator — a Max plan's quotas are not published — and it
-once confidently displayed **3704%**. A ring that says "—" is more useful than
-one that says something false, so unavailable data now stays unavailable.
-
-This endpoint is **unofficial and undocumented**. Three things are worth
-knowing if you build something similar:
-
-- The `User-Agent: claude-code/<version>` header is not optional in practice.
-  Without it you land in an aggressively rate-limited bucket and get persistent
-  `429`s.
-- **Per-model windows use internal codenames, not model names.** There is no
-  `seven_day_fable`. A live response carries `seven_day_omelette` alongside
-  decoys like `cinder_cove`, `nimbus_quill` and `iguana_necktie`. The mapping
-  here is inferred by matching a live response against what `/usage` displayed
-  — an inference, not a contract. Pin a different key in Settings if it moves.
-- **`null` means 0%, not "unavailable".** A per-model key that is present but
-  null means the window applies to your account with no usage yet, which is
-  how `/usage` renders it.
-
-### Rate limiting
-
-The endpoint is limited more tightly than it looks. The widget polls every
-three minutes by default and enforces a floor between calls regardless of what
-asks, because the timer is not the only caller.
-
-Backoff is **persisted to disk**. Keeping it in memory quietly defeats it:
-quitting and reopening resets the timer and fires a request immediately, so a
-handful of relaunches can turn a short `Retry-After` into an hour-long one.
-`--check` honours the same wait and needs `--force` to override.
-
-## Authentication
-
-A single long-lived token from `claude setup-token`, pasted once:
-
-```bash
-claude setup-token
-```
-
-The app opens a setup guide on first run — generate, paste, save, test. The
-test step actually calls the API, because "saved" is not the same as "works".
-
-Claude Code's own stored token is deliberately **not** used. It expires every
-few hours and is not reliably refreshed on disk, so a widget reading it goes
-dark several times a day for reasons you cannot see or fix. It also sits behind
-a Keychain access-control prompt that every rebuild invalidates.
-
-`CLAUDE_CODE_OAUTH_TOKEN` is honoured too, but only when the app is launched
-from a shell — an app opened from Finder inherits no environment, which is why
-the paste field exists at all.
-
-### Security
-
-- The token is written only when you paste one in, and only to the Keychain:
-  never to `config.json`, never to logs, never to disk in the clear.
-- It lives in a Keychain item **this app creates**. An application always has
-  access to its own items, so reading it never prompts.
-- Stored device-only and after-first-unlock: no iCloud sync, unreadable while
-  the Mac is locked.
-- `OAuthCredentials` prints `<redacted>`, so interpolating one into a log line
-  cannot leak it. A unit test asserts this, so removing the redaction turns the
-  build red.
-- No credential of any kind is in this repository.
-
-### Diagnostics
-
-```bash
-./dist/ClaudeUsageWidget.app/Contents/MacOS/ClaudeUsageWidget --check
-```
-
-Reports where the token came from, whether the endpoint answered, and which
-rings resolved. It never prints a token value.
-
-## Architecture
+<br>
 
 ```
 Sources/ClaudeUsageWidget/
-├── main.swift                  entry point; --check and --render-preview
+├── main.swift                    entry point; --check and --render-preview
 ├── App/
-│   ├── AppDelegate.swift       wiring, windows, main menu
-│   ├── WidgetPanel.swift       borderless non-activating NSPanel
-│   ├── StatusItemController.swift
-│   ├── Diagnostics.swift       --check
-│   └── PreviewRenderer.swift   --render-preview
+│   ├── AppDelegate.swift         wiring, windows, main menu
+│   ├── WidgetPanel.swift         borderless, non-activating, resizable NSPanel
+│   ├── StatusItemController.swift  menu bar readout and menu
+│   ├── Diagnostics.swift         --check
+│   └── PreviewRenderer.swift     --render-preview
 ├── Core/
-│   ├── Models.swift            RingMetric, RingDatum, UsageSnapshot
-│   └── Config.swift            settings, persisted as JSON
+│   ├── Models.swift              RingMetric, RingDatum, UsageSnapshot
+│   ├── Config.swift              settings, persisted as JSON
+│   └── UsageHistory.swift        recorded readings and trend projection
 ├── Data/
-│   ├── CredentialStore.swift   Keychain, token sanitising, redaction
+│   ├── CredentialStore.swift     reads Claude Code's credential; redaction
 │   ├── OAuthUsageProvider.swift  the endpoint and its tolerant decoder
-│   └── UsageCoordinator.swift  refresh loop, persisted backoff
+│   └── UsageCoordinator.swift    refresh loop, cache, persisted backoff
 └── UI/
-    ├── ActivityRingsView.swift adaptive geometry, overflow laps
-    ├── WidgetView.swift        rings, or the setup prompt
-    ├── OnboardingView.swift    generate → paste → save → test
-    └── SettingsView.swift
+    ├── ActivityRingsView.swift   adaptive geometry, overflow laps
+    ├── WidgetView.swift          rings, forecast, or the sign-in prompt
+    ├── ForecastView.swift        trajectory chart and verdict
+    ├── WaitingView.swift         rate-limit countdown
+    ├── OnboardingView.swift      sign in → test connection
+    └── SettingsView.swift        Appearance · Rings · Connection
 ```
 
-Settings and rate-limit state live in
-`~/Library/Application Support/ClaudeUsageWidget/`. The token does not — it is
-in the Keychain.
+</details>
 
-## Distribution
+<details>
+<summary><b>🚀 Distribution & releasing</b></summary>
 
-The Mac App Store is not an option for this app, and the reason is structural
-rather than bureaucratic: **MAS requires sandboxing**, and a sandboxed app
-cannot read Claude Code's Keychain item, cannot read `~/.claude/projects`
-outside its container, and cannot invoke `/usr/bin/security`. That is every one
-of this app's data paths.
+<br>
 
-The route for Mac utilities is **Developer ID + notarization** — no store, no
-review.
+#### Generating the Xcode project
 
-### Generating the Xcode project
-
-Everyday work needs no Xcode project (`swift build`, `swift test`,
-`./Scripts/build-app.sh`). But a Swift *package* opened in Xcode has no
-Signing & Capabilities tab and no `Product ▸ Archive`, so the Organizer flow
-that notarizes a Developer ID build is unavailable. For that you need a real
-App target:
+Everyday work needs no Xcode project. But a Swift _package_ opened in Xcode has
+no Signing & Capabilities tab and no `Product ▸ Archive`, so for the Organizer
+flow you need a real App target, generated from `project.yml` by XcodeGen:
 
 ```bash
 brew install xcodegen && DEVELOPMENT_TEAM=YOURTEAMID xcodegen generate && open ClaudeUsageWidget.xcodeproj
 ```
 
-Pass `DEVELOPMENT_TEAM` rather than setting the team in Xcode's UI. The UI
+Pass `DEVELOPMENT_TEAM` rather than setting the team in Xcode's UI — the UI
 writes it into the generated project, which the next `xcodegen generate`
-overwrites.
+overwrites. `project.yml` is the source of truth; the `.xcodeproj` is
+git-ignored. Hardened runtime is enabled there (notarization rejects builds
+without it) and the sandbox is explicitly off, for the reasons in the FAQ.
 
-`project.yml` is the source of truth; the `.xcodeproj` is generated and
-git-ignored, so it cannot drift from the sources or rot into an unreviewable
-binary diff. Regenerate it whenever you add a file.
+#### Signing certificates: the iOS gotcha
 
-### Signing certificates: the iOS gotcha
+| Certificate                  | What it is for                     | Works outside the store?       |
+| ---------------------------- | ---------------------------------- | ------------------------------ |
+| **Apple Development**        | local builds, registered devices   | no — blocked on other Macs     |
+| **Apple Distribution**       | App Store / TestFlight submissions | no — not a Gatekeeper identity |
+| **Developer ID Application** | direct distribution                | **yes**                        |
 
-Two certificate types look plausible here and only one works.
-
-| Certificate | What it is for | Works outside the store? |
-|---|---|---|
-| **Apple Development** | local builds, registered devices | no — blocked on other Macs |
-| **Apple Distribution** | App Store / TestFlight submissions | no — not a Gatekeeper identity |
-| **Developer ID Application** | direct distribution | **yes** |
-
-Coming from iOS, *Apple Distribution* is the trap: it is the certificate you
-already use for TestFlight, so it reads as the "release" one. It is not
-accepted for notarized direct distribution.
-
-Create a **Developer ID Application** certificate in Xcode ▸ Settings ▸
-Accounts ▸ Manage Certificates ▸ **+**. It requires the paid Apple Developer
-Program, and the option only appears if you are the **Account Holder** on the
-team.
-
-Verify you have the right one:
+Coming from iOS, _Apple Distribution_ is the trap: it reads as the "release"
+certificate, but it is not accepted for notarized direct distribution. Create a
+**Developer ID Application** certificate in Xcode ▸ Settings ▸ Accounts ▸
+Manage Certificates ▸ **+** (paid Apple Developer Program, Account Holder
+only), then verify:
 
 ```bash
 security find-identity -v -p codesigning | grep "Developer ID Application"
 ```
 
-You can confirm the whole chain before ever archiving:
+You can confirm the chain before ever archiving:
 
 ```bash
 CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./Scripts/build-app.sh && spctl -a -vvv -t install dist/ClaudeUsageWidget.app
 ```
 
 A correctly signed but not-yet-notarized app reports `rejected` with
-`source=Unnotarized Developer ID`. That is the expected result at that stage —
-it means everything except notarization is right.
+`source=Unnotarized Developer ID` — the expected result at that stage.
 
-`Scripts/build-app.sh` deliberately prefers whatever certificate it finds for
-*local* builds — that is only about keeping Keychain grants stable across
-rebuilds, and is unrelated to distribution.
+#### Cutting a release
 
-### Archiving and notarizing
-
-In Xcode: select the target ▸ **Signing & Capabilities** ▸ set your Team, then
-`Product ▸ Archive` ▸ **Distribute App** ▸ **Direct Distribution**. Xcode
-notarizes and staples for you.
-
-The equivalent from the command line:
-
-```bash
-xcrun notarytool submit ClaudeUsageWidget.zip --keychain-profile AC_PASSWORD --wait
-```
-
-```bash
-xcrun stapler staple dist/ClaudeUsageWidget.app
-```
-
-Stapling matters — it embeds the ticket so the app validates without a network
-round trip on your friend's machine.
-
-Hardened runtime is enabled in `project.yml` (notarization rejects builds
-without it) and the sandbox is explicitly off, for the reasons above.
-
-### App icon
-
-```bash
-./Scripts/make-icon.sh ~/Downloads/your-icon.png
-```
-
-Generates `Resources/AppIcon.icns`. Both build paths pick it up automatically —
-no online generator, and no uploading your artwork anywhere.
-
-Unlike iOS, where Xcode slices a single 1024px image for you, a macOS `.icns`
-wants the full set: 16/32/128/256/512 at both scale factors, ten files. `sips`
-and `iconutil` ship with macOS and do all of it. A non-square source is padded
-rather than cropped, on the grounds that silently eating part of someone's
-artwork is worse than a bit of transparency.
-
-For the macOS 26+ layered look — automatic light, dark, clear and tinted
-variants — use **Icon Composer**, bundled inside Xcode:
-
-```bash
-open "/Applications/Xcode.app/Contents/Applications/Icon Composer.app"
-```
-
-That exports a `.icon` rather than a `.icns`, and is a design exercise rather
-than a packaging step. A plain `.icns` works fine everywhere.
-
-### Release notes
-
-Notes are written as the work happens, in `ReleaseNotes/Unreleased.md` — one
-line per user-visible change, under `Added` / `Changed` / `Fixed`. Reconstructing
-them at release time is when the detail goes, and it shows.
-
-`ReleaseNotes/CLAUDE.md` is the instruction sheet, so an agent working in this
-repo keeps the file current without being asked. Its main rule is brevity: one
-sentence, written for whoever is deciding whether to download the build, not
-for whoever wrote the code. If a change is not user-visible it gets no note at
-all — an empty section beats filler.
-
-`release.sh` archives those notes to `ReleaseNotes/v<version>.md`, publishes
-them in the GitHub release body, and resets the scratch file. It **refuses to
-release** when the file is empty: shipping a build nobody can describe is worse
-than not shipping it.
-
-### Cutting a release
-
-```bash
-./Scripts/release.sh 1.0.0
-```
-
-Signs with the Developer ID certificate, notarizes, staples, verifies, builds
-both a drag-to-Applications `.dmg` and a `.zip` with checksums, and creates the
-GitHub Release. The disk image is notarized and stapled separately from the app
-inside it — Gatekeeper assesses the container the user double-clicks, so
-stapling only the app leaves the `.dmg` itself unnotarized. Useful flags: `--no-publish`
-to package only, `--draft`, and `--app PATH` to reuse a bundle you already
-built (a bundle that already carries a stapled ticket is not re-submitted).
-
-Notarization credentials are stored once — this needs an app-specific password
-from appleid.apple.com, so it is yours to run:
+Store notarization credentials once (needs an app-specific password from
+appleid.apple.com):
 
 ```bash
 xcrun notarytool store-credentials "ClaudeUsageWidget" --apple-id you@example.com --team-id YOURTEAMID
 ```
 
-The script fails early rather than late. It refuses to submit anything missing
-the hardened runtime or a secure timestamp — both guaranteed rejections that
-would otherwise surface fifteen minutes into Apple's queue — and after
-stapling it re-runs the Gatekeeper check on a **copy tagged with a download
-quarantine flag**. That last part matters: an app assessed on the machine that
-built it can pass while still being refused as a download, which is the only
-context that counts.
-
-### Or just have them build it
-
-The repository is public and `./Scripts/build-app.sh` works from a clean clone.
-For a technical friend that is zero cost and no Apple paperwork.
-
-Either way, the widget is only useful to someone with their own Claude
-subscription: it reads their limits using a token they generate themselves,
-never yours.
-
-## Tests
+Then:
 
 ```bash
-swift test
+./Scripts/release.sh 1.2.0
 ```
 
-Covers the parts that fail quietly: decoding a payload whose key names are not
-guaranteed, resolving Fable through a codename, treating a null model window as
-0%, stripping whitespace from a terminal-wrapped token, token redaction, ring
-hit-testing, and the rule that cosmetic settings never trigger a network call.
+It signs with the Developer ID certificate, notarizes, staples, builds the
+drag-to-Applications `.dmg` (notarized and stapled separately from the app
+inside it, since Gatekeeper assesses the container you double-click), writes a
+SHA-256 checksum, and creates the GitHub Release. It fails early on a missing
+hardened runtime or secure timestamp, and re-runs the Gatekeeper check on a
+copy tagged with a download quarantine flag — because an app can pass on the
+machine that built it and still be refused as a download. Useful flags:
+`--no-publish`, `--draft`, and `--app PATH` to reuse an existing build.
 
-## Caveats
+#### Release notes
+
+Notes are written as the work happens, one line per user-visible change, in
+`ReleaseNotes/Unreleased.md` (rules in `ReleaseNotes/CLAUDE.md`, so an agent
+working in the repo keeps it current too). `release.sh` archives them to
+`ReleaseNotes/v<version>.md`, publishes them in the release body, resets the
+scratch file — and **refuses to release** when it is empty.
+
+#### App icon and screenshots
+
+```bash
+./Scripts/make-icon.sh ~/Downloads/your-icon.png
+```
+
+Generates the full ten-size `Resources/AppIcon.icns` with `sips` and `iconutil`
+(both ship with macOS); a non-square source is padded, not cropped.
+
+```bash
+./dist/ClaudeUsageWidget.app/Contents/MacOS/ClaudeUsageWidget --render-preview docs/rings.png
+```
+
+Renders the README image offscreen from fixed demo values, without touching the
+network. `--forecast` and `--waiting` render those views instead.
+
+</details>
+
+## ⚠️ Caveats
 
 - The usage endpoint is unofficial. If it changes, the rings go quiet and say
   so — there is no fallback that invents numbers.
-- The Fable codename mapping is inferred from observation, not documented.
-- Requires a Claude subscription with usage limits to report.
+- Requires Claude Code signed in with a Claude subscription that has usage
+  limits to report.
+- An independent project, not affiliated with or endorsed by Anthropic.
 
-## License
+## 📄 License
 
 MIT — see [LICENSE](LICENSE).
